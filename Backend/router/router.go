@@ -44,6 +44,7 @@ type Router struct {
 	db                *database.DB
 	scanStore         *database.ScanStore
 	autoUpdater       *scanner.AutoUpdater
+	setupToken        string
 	subsonicAuthCache sync.Map
 	corsConfig        struct {
 		AllowedOrigins []string `json:"allowed_origins"`
@@ -59,6 +60,7 @@ func NewRouter(
 	playlistHandler *handlers.PlaylistHandler,
 	webSocketManager *websocket.WebSocketManager,
 	db *database.DB,
+	setupToken string,
 	corsConfig struct {
 		AllowedOrigins []string `json:"allowed_origins"`
 		AllowedMethods []string `json:"allowed_methods"`
@@ -75,6 +77,7 @@ func NewRouter(
 		enrichmentHandler: enrichmentHandler,
 		webSocketManager:  webSocketManager,
 		db:                db,
+		setupToken:        strings.TrimSpace(setupToken),
 		scanStore:         scanStore,
 		corsConfig:        corsConfig,
 	}
@@ -112,8 +115,9 @@ func (r *Router) SetupRoutes() *mux.Router {
 	public.Handle("/auth/login", middleware.LoginRateLimit(10, 5*time.Minute)(http.HandlerFunc(r.authHandler.Login))).Methods("POST", "OPTIONS")
 	public.HandleFunc("/auth/register", r.authHandler.Register).Methods("POST", "OPTIONS")
 	public.HandleFunc("/setup/status", r.getSetupStatus).Methods("GET", "OPTIONS")
-	public.HandleFunc("/setup/directories", r.browseSetupDirectories).Methods("GET", "OPTIONS")
-	public.HandleFunc("/setup/complete", r.completeSetup).Methods("POST", "OPTIONS")
+	setupRateLimit := middleware.LoginRateLimit(20, 5*time.Minute)
+	public.Handle("/setup/directories", setupRateLimit(http.HandlerFunc(r.browseSetupDirectories))).Methods("GET", "OPTIONS")
+	public.Handle("/setup/complete", setupRateLimit(http.HandlerFunc(r.completeSetup))).Methods("POST", "OPTIONS")
 
 	// Protected routes (authentication required)
 	protected := router.PathPrefix("/api").Subrouter()

@@ -22,6 +22,8 @@ jobs:
           test -f Frontend/nginx.conf
           test -f Frontend/Dockerfile
           test -f docker-compose.yml
+          test -f docker-compose.internet.yml
+          test -f Caddyfile
 
   backend:
     needs: repository
@@ -100,3 +102,12 @@ jobs:
           POSTGRES_PASSWORD: ci-database-password
           JWT_SECRET: ci-only-secret-that-is-longer-than-thirty-two-characters
           MUSIC_PATH: /tmp/wavenode-music
+      - run: docker compose -f docker-compose.yml -f docker-compose.internet.yml config
+        env:
+          POSTGRES_PASSWORD: ci-database-password
+          JWT_SECRET: ci-only-secret-that-is-longer-than-thirty-two-characters
+          SETUP_TOKEN: ci-setup-token-that-is-long-enough
+          MUSIC_PATH: /tmp/wavenode-music
+          WAVENODE_DOMAIN: music.example.com
+          ACME_EMAIL: admin@example.com
+      - run: docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" -e WAVENODE_DOMAIN=music.example.com -e ACME_EMAIL=admin@example.com caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile

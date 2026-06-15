@@ -23,6 +23,8 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Disc-aware metadata, ordering, and album-page sections for multi-disc releases.
 - PostgreSQL integration coverage for Subsonic compatibility and final-administrator protection.
 - Correct source content types for MP3, FLAC, WAV, M4A, AAC, OGG, Opus, and AIFF streams.
+- Optional internet deployment with automatic HTTPS certificates through Caddy.
+- First-run setup access codes for preventing remote administrator-account claims.
 
 ## 0.1.0 - 2026-06-10
 
@@ -43,3 +45,4 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Track playback and alignment in the library track view.
 - Artist creation and recently played persistence on fresh PostgreSQL installations.
 - Browser playback startup, single-click volume changes, and authenticated stream proxying.
+- WebSocket origin validation and private-by-default host port binding.

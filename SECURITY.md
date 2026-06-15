@@ -16,11 +16,14 @@ Security fixes are applied to the latest release.
 - Keep backups outside the WaveNode host and encrypt them when stored on shared or remote systems.
 - Review **Admin Dashboard > System** after changing mounts or permissions.
 - Disable query-string access logging for `/api/music/*/stream` and `/ws` in custom reverse proxies.
+- Configure a random `SETUP_TOKEN` before exposing an unconfigured installation.
+- Expose only the bundled gateway ports `80` and `443`; never expose `8080` or `5432`.
 
 WaveNode refuses to start in production with the bundled development JWT secret.
 Login failures are rate limited, and the bundled frontend adds restrictive browser security headers.
 Changing a password or account role invalidates previously issued session tokens.
 The bundled Nginx configuration suppresses access logs for authenticated browser audio and WebSocket URLs.
+The internet deployment restricts browser WebSocket origins and uses Caddy for automatic TLS, HTTP-to-HTTPS redirects, and HSTS.
 
 ## Reporting
 

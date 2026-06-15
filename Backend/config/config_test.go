@@ -34,3 +34,15 @@ func TestProductionDefaultsRegistrationOff(t *testing.T) {
 		t.Fatalf("unexpected CORS origins: %#v", cfg.CORSOrigins)
 	}
 }
+
+func TestProductionRejectsShortSetupToken(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("JWT_SECRET", "a-unique-production-secret-that-is-long-enough")
+	t.Setenv("SETUP_TOKEN", "too-short")
+
+	_, err := LoadConfig()
+	if err == nil || !strings.Contains(err.Error(), "SETUP_TOKEN") {
+		t.Fatalf("expected SETUP_TOKEN validation error, got %v", err)
+	}
+}

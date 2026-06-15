@@ -196,7 +196,7 @@ func newSubsonicIntegration(t *testing.T) *subsonicIntegration {
 	wsManager := websocket.NewWebSocketManager(authHandler)
 	musicHandler := handlers.NewMusicHandler(db)
 	playlistHandler := handlers.NewPlaylistHandler(db)
-	appRouter := NewRouter(authHandler, musicHandler, playlistHandler, wsManager, db, struct {
+	appRouter := NewRouter(authHandler, musicHandler, playlistHandler, wsManager, db, "", struct {
 		AllowedOrigins []string `json:"allowed_origins"`
 		AllowedMethods []string `json:"allowed_methods"`
 		AllowedHeaders []string `json:"allowed_headers"`

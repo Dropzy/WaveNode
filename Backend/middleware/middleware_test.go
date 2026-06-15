@@ -79,6 +79,9 @@ func TestSecurityHeaders(t *testing.T) {
 	if !strings.Contains(recorder.Header().Get("Content-Security-Policy"), "media-src 'self' blob: https:") {
 		t.Fatal("content security policy must allow approved HTTPS media")
 	}
+	if recorder.Header().Get("Cross-Origin-Opener-Policy") != "same-origin" {
+		t.Fatal("missing cross-origin opener policy")
+	}
 }
 
 func TestLoginRateLimitCountsFailuresAndResetsAfterSuccess(t *testing.T) {

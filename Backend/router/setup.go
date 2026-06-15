@@ -1,6 +1,7 @@
 package router
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,6 +44,7 @@ func (r *Router) getSetupStatus(w http.ResponseWriter, req *http.Request) {
 		"success": true,
 		"data": map[string]interface{}{
 			"required":             required,
+			"token_required":       required && r.setupToken != "",
 			"default_artwork_path": artworkPath,
 			"registration_enabled": r.authHandler.RegistrationEnabled(),
 		},
@@ -59,6 +61,10 @@ func (r *Router) browseSetupDirectories(w http.ResponseWriter, req *http.Request
 		writeJSONError(w, http.StatusConflict, "Initial setup has already been completed")
 		return
 	}
+	if !r.setupAuthorized(req) {
+		writeJSONError(w, http.StatusUnauthorized, "The setup access code is incorrect")
+		return
+	}
 	r.browseMusicDirectories(w, req)
 }
 
@@ -70,6 +76,10 @@ func (r *Router) completeSetup(w http.ResponseWriter, req *http.Request) {
 	}
 	if !required {
 		writeJSONError(w, http.StatusConflict, "Initial setup has already been completed")
+		return
+	}
+	if !r.setupAuthorized(req) {
+		writeJSONError(w, http.StatusUnauthorized, "The setup access code is incorrect")
 		return
 	}
 
@@ -150,6 +160,14 @@ func (r *Router) completeSetup(w http.ResponseWriter, req *http.Request) {
 			"scan_warning": scanWarning,
 		},
 	})
+}
+
+func (r *Router) setupAuthorized(req *http.Request) bool {
+	if r.setupToken == "" {
+		return true
+	}
+	provided := strings.TrimSpace(req.Header.Get("X-WaveNode-Setup-Token"))
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(r.setupToken)) == 1
 }
 
 func prepareWritableDirectory(path string) (string, error) {

@@ -15,6 +15,7 @@ type Config struct {
 	Port              string
 	DatabaseURL       string
 	JWTSecret         string
+	SetupToken        string
 	MusicPath         string
 	Environment       string
 	CORSOrigins       []string
@@ -32,6 +33,7 @@ func LoadConfig() (*Config, error) {
 		Port:        getEnv("SERVER_PORT", "8080"),
 		DatabaseURL: getEnv("DATABASE_URL", "postgres://localhost/musicserver?sslmode=disable"),
 		JWTSecret:   getEnv("JWT_SECRET", "your-secret-key-change-this-in-production"),
+		SetupToken:  strings.TrimSpace(getEnv("SETUP_TOKEN", "")),
 		MusicPath:   getEnv("MUSIC_PATH", ""),
 		Environment: strings.ToLower(getEnv("APP_ENV", "development")),
 	}
@@ -52,6 +54,9 @@ func LoadConfig() (*Config, error) {
 		}
 		if cfg.DatabaseURL == "postgres://localhost/musicserver?sslmode=disable" {
 			return nil, fmt.Errorf("DATABASE_URL must be configured in production")
+		}
+		if cfg.SetupToken != "" && len(cfg.SetupToken) < 16 {
+			return nil, fmt.Errorf("SETUP_TOKEN must be at least 16 characters when configured")
 		}
 	}
 

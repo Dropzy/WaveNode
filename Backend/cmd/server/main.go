@@ -78,7 +78,7 @@ func main() {
 	authHandler.SetRegistrationEnabled(cfg.AllowRegistration)
 
 	// Initialize WebSocket manager
-	wsManager := websocket.NewWebSocketManager(authHandler)
+	wsManager := websocket.NewWebSocketManager(authHandler, cfg.CORSOrigins...)
 	wsManager.Start()
 	websocket.SetGlobalWebSocketManager(wsManager)
 
@@ -120,6 +120,7 @@ func main() {
 			"Origin",
 			"Access-Control-Request-Method",
 			"Access-Control-Request-Headers",
+			"X-WaveNode-Setup-Token",
 		},
 	}
 
@@ -130,6 +131,7 @@ func main() {
 		playlistHandler,
 		wsManager,
 		db,
+		cfg.SetupToken,
 		corsConfig,
 	)
 

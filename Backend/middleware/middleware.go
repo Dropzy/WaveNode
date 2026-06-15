@@ -18,6 +18,8 @@ func SecurityHeadersMiddleware() func(http.Handler) http.Handler {
 			w.Header().Set("X-Frame-Options", "DENY")
 			w.Header().Set("Referrer-Policy", "same-origin")
 			w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+			w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+			w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 			w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' ws: wss:; style-src 'self' 'unsafe-inline'; script-src 'self'")
 			next.ServeHTTP(w, r)
 		})

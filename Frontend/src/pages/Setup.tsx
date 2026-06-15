@@ -39,6 +39,7 @@ const Setup = ({ status }: SetupProps) => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [setupAccessCode, setSetupAccessCode] = useState('')
   const [musicPaths, setMusicPaths] = useState<string[]>([])
   const [artworkPath, setArtworkPath] = useState(status.default_artwork_path)
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null)
@@ -90,7 +91,7 @@ const Setup = ({ status }: SetupProps) => {
     setPickerLoading(true)
     setError('')
     try {
-      setDirectoryData(await setupAPI.browseDirectories(path))
+      setDirectoryData(await setupAPI.browseDirectories(path, setupAccessCode))
     } catch (err) {
       setError(readError(err, 'This folder cannot be opened.'))
     } finally {
@@ -121,6 +122,10 @@ const Setup = ({ status }: SetupProps) => {
   const next = () => {
     setError('')
     if (step === 0) {
+      if (status.token_required && !setupAccessCode.trim()) {
+        setError('Enter the setup access code from the server configuration.')
+        return
+      }
       if (username.trim().length < 3) {
         setError('Choose an administrator username with at least 3 characters.')
         return
@@ -159,7 +164,7 @@ const Setup = ({ status }: SetupProps) => {
         password,
         music_paths: musicPaths,
         artwork_path: artworkPath,
-      })
+      }, setupAccessCode)
       tokenUtils.setToken(result.token)
       setScan(result.scan)
       setScanWarning(result.scan_warning)
@@ -204,6 +209,18 @@ const Setup = ({ status }: SetupProps) => {
               <Title>Create your administrator</Title>
               <Description>This account controls music folders, scans, users, and server settings.</Description>
               <FormGrid>
+                {status.token_required && (
+                  <Field>
+                    <label htmlFor="setup-access-code">Setup access code</label>
+                    <input
+                      id="setup-access-code"
+                      type="password"
+                      value={setupAccessCode}
+                      onChange={event => setSetupAccessCode(event.target.value)}
+                      autoComplete="off"
+                    />
+                  </Field>
+                )}
                 <Field>
                   <label htmlFor="setup-username">Username</label>
                   <input id="setup-username" value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" />

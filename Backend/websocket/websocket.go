@@ -3,6 +3,7 @@ package websocket
 import (
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -29,7 +30,7 @@ type WebSocketManager struct {
 }
 
 // NewWebSocketManager creates a new WebSocket manager
-func NewWebSocketManager(authHandler *auth.AuthHandler) *WebSocketManager {
+func NewWebSocketManager(authHandler *auth.AuthHandler, allowedOrigins ...string) *WebSocketManager {
 	return &WebSocketManager{
 		clients:     make(map[*websocket.Conn]bool),
 		register:    make(chan *websocket.Conn),
@@ -37,10 +38,30 @@ func NewWebSocketManager(authHandler *auth.AuthHandler) *WebSocketManager {
 		broadcast:   make(chan WebSocketMessage),
 		authHandler: authHandler,
 		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				return true // Allow all origins for now
-			},
+			CheckOrigin: websocketOriginAllowed(allowedOrigins),
 		},
+	}
+}
+
+func websocketOriginAllowed(allowedOrigins []string) func(*http.Request) bool {
+	allowed := make(map[string]struct{}, len(allowedOrigins))
+	for _, origin := range allowedOrigins {
+		origin = strings.TrimRight(strings.TrimSpace(origin), "/")
+		if origin != "" {
+			allowed[origin] = struct{}{}
+		}
+	}
+
+	return func(r *http.Request) bool {
+		origin := strings.TrimRight(strings.TrimSpace(r.Header.Get("Origin")), "/")
+		if origin == "" {
+			return true
+		}
+		if _, ok := allowed[origin]; ok {
+			return true
+		}
+		parsed, err := url.Parse(origin)
+		return err == nil && strings.EqualFold(parsed.Host, r.Host)
 	}
 }
 

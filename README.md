@@ -90,6 +90,8 @@ Public registration is disabled by default in production. Administrators can cre
 
 Read [SECURITY.md](SECURITY.md) before exposing WaveNode outside a trusted network.
 
+For secure internet access, WaveNode includes an optional Caddy gateway that obtains and renews HTTPS certificates automatically. Follow the **Internet Deployment** section in [DEPLOYMENT.md](DEPLOYMENT.md); do not forward port `8080`.
+
 ## Project Status
 
 WaveNode is preparing its `v0.1.0` release. The web application and Docker deployment are the supported targets; the Android client remains preview software.

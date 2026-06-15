@@ -1,0 +1,26 @@
+services:
+  backend:
+    environment:
+      SETUP_TOKEN: ${SETUP_TOKEN:?Set SETUP_TOKEN to a random value of at least 16 characters}
+
+  gateway:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_started
+    environment:
+      WAVENODE_DOMAIN: ${WAVENODE_DOMAIN:?Set WAVENODE_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -230,6 +230,7 @@ export interface AuthResponse {
 
 export interface SetupStatus {
   required: boolean
+  token_required: boolean
   default_artwork_path: string
   registration_enabled: boolean
 }
@@ -594,9 +595,10 @@ export const setupAPI = {
     return response.data.data
   },
 
-  browseDirectories: async (path?: string): Promise<DirectoryBrowserData> => {
+  browseDirectories: async (path?: string, setupToken?: string): Promise<DirectoryBrowserData> => {
     const response = await api.get<APIResponse<DirectoryBrowserData>>('/setup/directories', {
       params: path ? { path } : undefined,
+      headers: setupToken ? { 'X-WaveNode-Setup-Token': setupToken } : undefined,
     })
     if (!response.data.data) {
       throw new Error('Directory listing was not returned')
@@ -610,8 +612,10 @@ export const setupAPI = {
     password: string
     music_paths: string[]
     artwork_path: string
-  }): Promise<SetupResult> => {
-    const response = await api.post<APIResponse<SetupResult>>('/setup/complete', details)
+  }, setupToken?: string): Promise<SetupResult> => {
+    const response = await api.post<APIResponse<SetupResult>>('/setup/complete', details, {
+      headers: setupToken ? { 'X-WaveNode-Setup-Token': setupToken } : undefined,
+    })
     if (!response.data.data) {
       throw new Error('Setup result was not returned')
     }

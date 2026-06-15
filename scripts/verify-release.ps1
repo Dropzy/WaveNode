@@ -76,6 +76,7 @@ finally {
 Write-Host 'Validating Docker Compose...'
 $env:POSTGRES_PASSWORD = 'release-check-password'
 $env:JWT_SECRET = 'release-check-secret-that-is-at-least-thirty-two-characters'
+$env:SETUP_TOKEN = 'release-check-setup-token'
 $env:MUSIC_PATH = $root
 Invoke-Checked -Command docker -Arguments @(
     'compose',
@@ -83,6 +84,34 @@ Invoke-Checked -Command docker -Arguments @(
     $root,
     'config',
     '--quiet'
+)
+$env:WAVENODE_DOMAIN = 'music.example.com'
+$env:ACME_EMAIL = 'admin@example.com'
+Invoke-Checked -Command docker -Arguments @(
+    'compose',
+    '--project-directory',
+    $root,
+    '-f',
+    (Join-Path $root 'docker-compose.yml'),
+    '-f',
+    (Join-Path $root 'docker-compose.internet.yml'),
+    'config',
+    '--quiet'
+)
+Invoke-Checked -Command docker -Arguments @(
+    'run',
+    '--rm',
+    '-v',
+    "$((Join-Path $root 'Caddyfile')):/etc/caddy/Caddyfile:ro",
+    '-e',
+    'WAVENODE_DOMAIN=music.example.com',
+    '-e',
+    'ACME_EMAIL=admin@example.com',
+    'caddy:2.10-alpine',
+    'caddy',
+    'validate',
+    '--config',
+    '/etc/caddy/Caddyfile'
 )
 
 Write-Host 'Checking patch hygiene...'

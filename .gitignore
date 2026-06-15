@@ -81,6 +81,7 @@ config.json
 *.conf
 !*.conf.example
 !Frontend/nginx.conf
+!Caddyfile
 
 # Audio files (if storing locally for testing)
 *.mp3
