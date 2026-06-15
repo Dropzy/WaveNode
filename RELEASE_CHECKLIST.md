@@ -23,7 +23,7 @@
 - [x] Test a regular user cannot access administration endpoints or another account's playlists
 - [x] Verify production PWA assets, security headers, version metadata, and non-root container execution
 - [x] Test HTTPS and WebSocket connectivity through the intended reverse proxy
-- [ ] Review generated artwork and local environment files are absent from the release archive
+- [x] Review generated artwork and local environment files are absent from the release archive
 - [x] Publish from a clean or squashed Git history; legacy diagnostic commits contained local paths and expired test tokens
 
 Run the repeatable local checks with:
