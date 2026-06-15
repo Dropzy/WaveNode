@@ -1,0 +1,43 @@
+name: Bug report
+description: Report a reproducible WaveNode problem
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: checkboxes
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: I removed credentials, tokens, private paths, and personal media from this report.
+          required: true
+  - type: input
+    attributes:
+      label: WaveNode version
+      placeholder: v0.1.0 or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Deployment
+      options:
+        - Docker Compose
+        - Development server
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Problem
+      description: What happened and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Sanitized logs
+      render: text

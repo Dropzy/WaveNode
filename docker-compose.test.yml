@@ -1,0 +1,34 @@
+services:
+  integration-database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: wavenode_test
+      POSTGRES_PASSWORD: wavenode_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wavenode_test -d postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  subsonic-integration-tests:
+    image: golang:1.25.11-alpine
+    working_dir: /src
+    depends_on:
+      integration-database:
+        condition: service_healthy
+    environment:
+      SUBSONIC_TEST_DATABASE_URL: postgres://wavenode_test:wavenode_test@integration-database:5432/postgres?sslmode=disable
+      APP_ENV: test
+      DEV_SEED_TEST_USER: "false"
+    volumes:
+      - ./Backend:/src
+      - subsonic_test_go_cache:/root/.cache/go-build
+      - subsonic_test_mod_cache:/go/pkg/mod
+    command: ["go", "test", "-tags=integration", "-count=1", "-v", "./router"]
+
+volumes:
+  subsonic_test_go_cache:
+  subsonic_test_mod_cache:

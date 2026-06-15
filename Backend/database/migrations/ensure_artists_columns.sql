@@ -1,0 +1,34 @@
+-- Ensure all required columns exist in artists table
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS id VARCHAR(255) PRIMARY KEY;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS name VARCHAR(255) UNIQUE NOT NULL;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS spotify_id VARCHAR(255) UNIQUE;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS spotify_url TEXT;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS image_small_url TEXT;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS image_medium_url TEXT;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS image_large_url TEXT;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS followers INTEGER DEFAULT 0;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS popularity INTEGER DEFAULT 0;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS genres JSONB;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS biography TEXT;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS country VARCHAR(2);
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS external_urls JSONB;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS uri TEXT;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS href TEXT;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS type VARCHAR(50) DEFAULT 'artist';
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS api_data JSONB;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS last_enriched_at TIMESTAMP;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+-- Ensure MusicBrainz columns exist
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS musicbrainz_id VARCHAR(255) UNIQUE;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS musicbrainz_url TEXT;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS tags JSONB;
+
+-- Create indexes for performance
+CREATE INDEX IF NOT EXISTS idx_artists_name ON artists(name);
+CREATE INDEX IF NOT EXISTS idx_artists_spotify_id ON artists(spotify_id);
+CREATE INDEX IF NOT EXISTS idx_artists_musicbrainz_id ON artists(musicbrainz_id);
+CREATE INDEX IF NOT EXISTS idx_artists_popularity ON artists(popularity DESC);
+CREATE INDEX IF NOT EXISTS idx_artists_last_enriched ON artists(last_enriched_at);

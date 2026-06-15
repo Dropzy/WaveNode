@@ -1,0 +1,9 @@
+.env
+artwork/
+*.exe
+music-server
+test_server
+*_test.go
+.cache/
+.gocache/
+.gotmp/

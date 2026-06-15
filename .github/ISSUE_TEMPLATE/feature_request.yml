@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest an improvement to WaveNode
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    attributes:
+      label: Problem to solve
+      description: Describe the user problem rather than only the proposed implementation.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Alternatives considered

@@ -1,0 +1,61 @@
+services:
+  database:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wavenode
+      POSTGRES_USER: wavenode
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - database_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wavenode -d wavenode"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./Backend
+      args:
+        VERSION: ${WAVENODE_VERSION:-0.1.0}
+    restart: unless-stopped
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      SERVER_PORT: "8080"
+      DATABASE_URL: postgres://wavenode:${POSTGRES_PASSWORD}@database:5432/wavenode?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      WAVENODE_ARTWORK_PATH: /data/artwork
+      MUSIC_PATH: ""
+    volumes:
+      - artwork_data:/data/artwork
+      - type: bind
+        source: ${MUSIC_PATH:?Set MUSIC_PATH in .env}
+        target: /music
+        read_only: true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    build:
+      context: ./Frontend
+      args:
+        VERSION: ${WAVENODE_VERSION:-0.1.0}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "0.0.0.0:${WAVENODE_PORT:-8080}:80"
+
+volumes:
+  database_data:
+  artwork_data:

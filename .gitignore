@@ -1,0 +1,127 @@
+# Environment variables
+.env
+.env.docker
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+dist-ssr/
+build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go specific
+*.mod
+*.sum
+go.work
+go.work.sum
+vendor/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+*.sqlitedb
+
+# IDE and Editor files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Configuration files (keep examples)
+config.json
+!config.json.example
+*.conf
+!*.conf.example
+
+# Audio files (if storing locally for testing)
+*.mp3
+*.wav
+*.flac
+*.aac
+*.ogg
+*.m4a
+*.wma
+
+# Generated artwork. Keep the bundled genre placeholders.
+Backend/artwork/*
+!Backend/artwork/genres/
+!Backend/artwork/genres/**
+
+# Cache directories
+.cache/
+.gocache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+
+# Coverage reports
+coverage/
+*.lcov
+.nyc_output/
+
+# TypeScript
+*.tsbuildinfo
+
+# Local development
+*.local
+localhost/
+
+# Android/Gradle local state
+Android/.gradle/
+Android/.idea/
+Android/**/build/
+Android/local.properties
+Android/*.jks
+Android/*.keystore
+Android/*.apk
+Android/*.aab
