@@ -9,7 +9,22 @@ permissions:
   contents: read
 
 jobs:
+  repository:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify required release files
+        run: |
+          test -f Backend/go.mod
+          test -f Backend/go.sum
+          test -f Backend/Dockerfile
+          test -f Frontend/package-lock.json
+          test -f Frontend/nginx.conf
+          test -f Frontend/Dockerfile
+          test -f docker-compose.yml
+
   backend:
+    needs: repository
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -25,6 +40,7 @@ jobs:
       - run: go build ./cmd/server
 
   integration:
+    needs: repository
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -56,6 +72,7 @@ jobs:
       - run: go test -tags=integration -count=1 -v ./router
 
   frontend:
+    needs: repository
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -73,6 +90,7 @@ jobs:
       - run: npm run build
 
   containers:
+    needs: repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

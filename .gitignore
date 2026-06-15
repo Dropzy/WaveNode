@@ -34,8 +34,6 @@ build/
 *.out
 
 # Go specific
-*.mod
-*.sum
 go.work
 go.work.sum
 vendor/
@@ -82,6 +80,7 @@ config.json
 !config.json.example
 *.conf
 !*.conf.example
+!Frontend/nginx.conf
 
 # Audio files (if storing locally for testing)
 *.mp3
