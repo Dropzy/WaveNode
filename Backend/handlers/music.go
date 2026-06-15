@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"mime"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -459,11 +457,7 @@ func (h *MusicHandler) StreamMusic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(filePath)))
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Type", streaming.SourceContentType(music.Format, filePath))
 	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("Cache-Control", "private, no-cache")
 	http.ServeContent(w, r, fileInfo.Name(), fileInfo.ModTime(), file)

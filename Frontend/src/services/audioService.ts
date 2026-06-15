@@ -2,14 +2,12 @@ import { API_BASE_URL, Music } from './api';
 
 export class AudioService {
   private audio: HTMLAudioElement;
-  private currentObjectUrl?: string;
   private onTrackChange?: (track: Music) => void;
   private onTimeUpdate?: (currentTime: number, duration: number) => void;
   private onPlayStateChange?: (isPlaying: boolean) => void;
   private onTrackEnd?: () => void;
   private onPlaybackError?: (error: Error) => void;
   private isSettingTrack: boolean = false;
-  private loadController?: AbortController;
   private loadSequence = 0;
 
   constructor() {
@@ -67,125 +65,58 @@ export class AudioService {
     });
   }
 
-  setTrack(track: Music): Promise<void> {
+  setTrack(track: Music, autoplay = false): Promise<void> {
     return new Promise((resolve, reject) => {
       const loadSequence = ++this.loadSequence;
-      this.loadController?.abort();
-      this.loadController = new AbortController();
       this.isSettingTrack = true;
 
       // Stop current playback
       this.audio.pause();
-      
-      // Clean up previous object URL if exists
-      if (this.currentObjectUrl) {
-        URL.revokeObjectURL(this.currentObjectUrl);
-        this.currentObjectUrl = undefined;
-      }
 
       // Clear current source
       this.audio.src = '';
 
-      if (track.is_external && track.stream_url) {
-        this.audio.src = track.stream_url;
-        this.isSettingTrack = false;
-        this.onTrackChange?.(track);
-        this.audio.load();
-        resolve();
-        return;
-      }
-
-      // Get the streaming URL for the track with authentication
       const token = localStorage.getItem('token');
-      const streamUrl = `${API_BASE_URL}/music/${track.id}/stream`;
-      
-      console.log('Attempting to load track:', track.title, 'ID:', track.id);
-      console.log('Stream URL:', streamUrl);
-      console.log('Token exists:', !!token);
-      
-      // Use fetch to get audio blob with proper authentication
-      fetch(streamUrl, {
-        signal: this.loadController.signal,
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-      .then(response => {
-        console.log('Fetch response:', response.status, response.statusText);
-        console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
-        }
-        return response.blob();
-      })
-      .then(blob => {
+      const streamUrl = track.is_external && track.stream_url
+        ? track.stream_url
+        : `${API_BASE_URL}/music/${track.id}/stream?token=${encodeURIComponent(token || '')}`;
+
+      const onCanPlay = () => {
         if (loadSequence !== this.loadSequence) {
-          throw new DOMException('Superseded by a newer track', 'AbortError');
-        }
-        console.log('Received blob:', {
-          type: blob.type,
-          size: blob.size,
-          isAudio: blob.type.startsWith('audio/')
-        });
-        
-        if (!blob.type.startsWith('audio/')) {
-          console.warn('Blob is not audio type:', blob.type);
-        }
-        
-        const objectUrl = URL.createObjectURL(blob);
-        this.currentObjectUrl = objectUrl;
-        
-        // Set up event listeners before setting src
-        const onCanPlay = () => {
-          if (loadSequence !== this.loadSequence) {
-            return;
-          }
-          console.log('Audio can play triggered');
-          this.audio.removeEventListener('canplay', onCanPlay);
-          this.audio.removeEventListener('error', onError);
-          this.isSettingTrack = false;
-          if (this.onTrackChange) {
-            this.onTrackChange(track);
-          }
-          resolve();
-        };
-
-        const onError = (e: Event) => {
-          console.error('Audio load error:', e);
-          this.audio.removeEventListener('canplay', onCanPlay);
-          this.audio.removeEventListener('error', onError);
-          this.isSettingTrack = false;
-          if (this.currentObjectUrl) {
-            URL.revokeObjectURL(this.currentObjectUrl);
-            this.currentObjectUrl = undefined;
-          }
-          const error = new Error(`Could not load ${track.title}`);
-          this.onPlaybackError?.(error);
-          reject(error);
-        };
-
-        this.audio.addEventListener('canplay', onCanPlay);
-        this.audio.addEventListener('error', onError);
-        
-        // Small delay to ensure event listeners are properly attached
-        setTimeout(() => {
-          // Set src after event listeners are in place
-          this.audio.src = objectUrl;
-          console.log('Set audio src to:', objectUrl);
-          this.audio.load();
-        }, 10);
-      })
-      .catch(error => {
-        if (error instanceof DOMException && error.name === 'AbortError') {
-          reject(error);
           return;
         }
-        console.error('Fetch error:', error);
+        this.audio.removeEventListener('canplay', onCanPlay);
+        this.audio.removeEventListener('error', onError);
         this.isSettingTrack = false;
-        this.onPlaybackError?.(error instanceof Error ? error : new Error('Audio request failed'));
+        resolve();
+      };
+
+      const onError = () => {
+        if (loadSequence !== this.loadSequence) {
+          return;
+        }
+        this.audio.removeEventListener('canplay', onCanPlay);
+        this.audio.removeEventListener('error', onError);
+        this.isSettingTrack = false;
+        const error = new Error(`Could not load ${track.title}`);
+        this.onPlaybackError?.(error);
         reject(error);
-      });
+      };
+
+      this.audio.addEventListener('canplay', onCanPlay);
+      this.audio.addEventListener('error', onError);
+      this.audio.src = streamUrl;
+      this.onTrackChange?.(track);
+      this.audio.load();
+
+      if (autoplay) {
+        void this.audio.play().catch(error => {
+          this.audio.removeEventListener('canplay', onCanPlay);
+          this.audio.removeEventListener('error', onError);
+          this.isSettingTrack = false;
+          reject(error);
+        });
+      }
     });
   }
 
@@ -271,13 +202,7 @@ export class AudioService {
   // Cleanup
   destroy(): void {
     this.audio.pause();
-    this.loadController?.abort();
-    this.loadController = undefined;
     this.audio.src = '';
-    if (this.currentObjectUrl) {
-      URL.revokeObjectURL(this.currentObjectUrl);
-      this.currentObjectUrl = undefined;
-    }
     this.onTrackChange = undefined;
     this.onTimeUpdate = undefined;
     this.onPlayStateChange = undefined;

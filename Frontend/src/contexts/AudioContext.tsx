@@ -227,11 +227,10 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
     setIsLoading(true);
 
     try {
-      await audioService.setTrack(track);
+      await audioService.setTrack(track, true);
       if (requestedTrackIdRef.current !== track.id) {
         return;
       }
-      await audioService.play();
       
       // External live streams are not library tracks and cannot be added to track history.
       if (!track.is_external) {

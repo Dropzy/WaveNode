@@ -19,6 +19,7 @@ Do not expose the plain HTTP port directly to the internet. Put WaveNode behind 
 - Proxies normal HTTP traffic to port 8080
 - Supports WebSocket upgrades on `/ws`
 - Allows long responses for audio streaming
+- Does not log query strings for `/api/music/*/stream` or `/ws`
 
 When the included frontend and API share one hostname, leave `CORS_ALLOWED_ORIGINS` blank. Add explicit HTTPS origins only when a separate frontend hostname calls the API.
 

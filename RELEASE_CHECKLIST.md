@@ -13,8 +13,8 @@
 - [x] Verify scan-time technical metadata persistence for the complete live library
 - [x] Run automated coverage for nested smart-playlist and relative-date rules
 - [x] Complete first-run setup in a fresh database
-- [ ] Scan a representative MP3, FLAC, WAV, M4A, OGG, and Opus library
-- [ ] Test search, playlists, liked tracks, queue controls, seeking, volume, next, and previous
+- [x] Scan a representative MP3, FLAC, WAV, M4A, OGG, and Opus library
+- [x] Test search, playlists, liked tracks, queue controls, seeking, volume, next, and previous
 - [x] Test a regular user cannot access administration endpoints
 - [x] Test the final administrator cannot be deleted or demoted
 - [x] Test backup and restore on a disposable installation
@@ -22,9 +22,9 @@
 - [x] Test application backup download, restore, and sign-in recovery
 - [x] Test a regular user cannot access administration endpoints or another account's playlists
 - [x] Verify production PWA assets, security headers, version metadata, and non-root container execution
-- [ ] Test HTTPS and WebSocket connectivity through the intended reverse proxy
+- [x] Test HTTPS and WebSocket connectivity through the intended reverse proxy
 - [ ] Review generated artwork and local environment files are absent from the release archive
-- [ ] Publish from a clean or squashed Git history; legacy diagnostic commits contained local paths and expired test tokens
+- [x] Publish from a clean or squashed Git history; legacy diagnostic commits contained local paths and expired test tokens
 
 Run the repeatable local checks with:
 

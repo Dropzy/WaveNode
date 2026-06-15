@@ -15,6 +15,11 @@ func (h *AuthHandler) AuthMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" && isBrowserStreamRequest(r) {
+				if token := strings.TrimSpace(r.URL.Query().Get("token")); token != "" {
+					authHeader = "Bearer " + token
+				}
+			}
 			if authHeader == "" {
 				response := APIResponse{
 					Success: false,
@@ -59,6 +64,18 @@ func (h *AuthHandler) AuthMiddleware() func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func isBrowserStreamRequest(r *http.Request) bool {
+	if r.Method != http.MethodGet || r.URL == nil {
+		return false
+	}
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	return len(parts) == 4 &&
+		parts[0] == "api" &&
+		parts[1] == "music" &&
+		parts[2] != "" &&
+		parts[3] == "stream"
 }
 
 // AdminMiddleware creates middleware that requires admin role

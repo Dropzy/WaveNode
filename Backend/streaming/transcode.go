@@ -3,9 +3,12 @@ package streaming
 import (
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"music-server/database"
 )
@@ -27,6 +30,35 @@ func ContentType(format string) string {
 	default:
 		return "audio/mpeg"
 	}
+}
+
+func SourceContentType(format, path string) string {
+	suffix := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(format)), ".")
+	if suffix == "" {
+		suffix = strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
+	}
+	switch suffix {
+	case "mp3":
+		return "audio/mpeg"
+	case "flac":
+		return "audio/flac"
+	case "m4a", "mp4":
+		return "audio/mp4"
+	case "aac":
+		return "audio/aac"
+	case "ogg", "oga":
+		return "audio/ogg"
+	case "opus":
+		return "audio/opus"
+	case "wav", "wave":
+		return "audio/wav"
+	case "aif", "aiff":
+		return "audio/aiff"
+	}
+	if contentType := mime.TypeByExtension("." + suffix); contentType != "" {
+		return contentType
+	}
+	return "application/octet-stream"
 }
 
 func ReplayGainDB(profile database.PlaybackProfile, properties database.TrackAudioProperties) float64 {

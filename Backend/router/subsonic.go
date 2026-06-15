@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -881,30 +880,7 @@ func subsonicSongMap(track database.Music) map[string]interface{} {
 }
 
 func subsonicAudioContentType(format, path string) string {
-	suffix := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(format)), ".")
-	if suffix == "" {
-		suffix = strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
-	}
-	switch suffix {
-	case "mp3":
-		return "audio/mpeg"
-	case "flac":
-		return "audio/flac"
-	case "m4a", "mp4", "aac":
-		return "audio/mp4"
-	case "ogg", "oga":
-		return "audio/ogg"
-	case "opus":
-		return "audio/opus"
-	case "wav", "wave":
-		return "audio/wav"
-	case "aif", "aiff":
-		return "audio/aiff"
-	}
-	if contentType := mime.TypeByExtension("." + suffix); contentType != "" {
-		return contentType
-	}
-	return "application/octet-stream"
+	return streaming.SourceContentType(format, path)
 }
 
 func subsonicAlbumMap(album database.Album) map[string]interface{} {

@@ -582,6 +582,15 @@ export const Player: React.FC = () => {
     }
   };
 
+  const handleVolumePointerDown = (event: React.PointerEvent<HTMLInputElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0) {
+      return;
+    }
+    const percentage = (event.clientX - rect.left) / rect.width;
+    setVolume(Math.max(0, Math.min(1, percentage)));
+  };
+
   const handleToggleLike = async () => {
     if (!currentTrack || currentTrack.is_external) {
       return;
@@ -803,6 +812,7 @@ export const Player: React.FC = () => {
               max="1"
               step="0.01"
               value={volume}
+              onPointerDown={handleVolumePointerDown}
               onChange={(event) => setVolume(Number(event.currentTarget.value))}
               aria-label="Volume"
               title={`Volume: ${Math.round(volumePercentage)}%`}
