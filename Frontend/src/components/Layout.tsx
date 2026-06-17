@@ -7,7 +7,7 @@ import { Menu, X } from 'lucide-react'
 const LayoutContainer = styled.div`
   display: flex;
   height: 100vh;
-  background-color: #121212;
+  background-color: ${({ theme }) => theme.colors.background};
   position: relative;
 `
 
@@ -18,8 +18,8 @@ const SkipLink = styled.a`
   z-index: 2000;
   padding: 10px 14px;
   border-radius: 6px;
-  color: #000;
-  background: #1ed760;
+  color: ${({ theme }) => theme.colors.accentText};
+  background: ${({ theme }) => theme.colors.accentGradient};
   transform: translateY(-150%);
 
   &:focus {
@@ -42,8 +42,8 @@ const Content = styled.div`
   flex: 1;
   overflow-y: auto;
   background:
-    linear-gradient(to bottom, rgba(29, 185, 84, 0.58) 0, rgba(20, 83, 45, 0.34) 170px, #121212 390px),
-    #121212;
+    ${({ theme }) => theme.colors.contentGradient},
+    ${({ theme }) => theme.colors.background};
   
   @media (max-width: 768px) {
     padding-bottom: 90px; // Account for fixed player on mobile
@@ -56,7 +56,7 @@ const MobileMenuButton = styled.button`
   top: 16px;
   left: 16px;
   z-index: 1001;
-  background-color: #000000;
+  background-color: ${({ theme }) => theme.colors.surface};
   border: none;
   border-radius: 50%;
   width: 48px;
@@ -67,7 +67,7 @@ const MobileMenuButton = styled.button`
   transition: all 0.2s ease;
   
   &:hover {
-    background-color: #282828;
+    background-color: ${({ theme }) => theme.colors.surfaceStrong};
   }
   
   @media (max-width: 768px) {
@@ -77,7 +77,7 @@ const MobileMenuButton = styled.button`
   svg {
     width: 24px;
     height: 24px;
-    color: #fff;
+    color: ${({ theme }) => theme.colors.text};
   }
 `
 
@@ -90,7 +90,7 @@ const Overlay = styled.div.withConfig({
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: ${({ theme }) => theme.colors.overlay};
   z-index: 999;
   
   @media (max-width: 768px) {

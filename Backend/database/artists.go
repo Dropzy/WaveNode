@@ -731,6 +731,17 @@ func (db *DB) UpdateArtist(artist *Artist) error {
 		externalURLsJSON = []byte("{}")
 	}
 
+	var tagsJSON []byte
+	if len(artist.Tags) > 0 {
+		var err error
+		tagsJSON, err = json.Marshal(artist.Tags)
+		if err != nil {
+			return fmt.Errorf("failed to marshal tags: %v", err)
+		}
+	} else {
+		tagsJSON = []byte("[]")
+	}
+
 	var lastEnrichedAt interface{}
 	if artist.LastEnrichedAt != nil {
 		lastEnrichedAt = artist.LastEnrichedAt
@@ -739,7 +750,7 @@ func (db *DB) UpdateArtist(artist *Artist) error {
 	result, err := db.conn.Exec(query,
 		artist.ID, artist.Name, nullableArtistIdentifier(artist.MusicBrainzID), artist.MusicBrainzURL,
 		artist.ImageURL, artist.ImageSmallURL, artist.ImageMediumURL,
-		artist.ImageLargeURL, artist.Country, artist.Tags, artist.Biography,
+		artist.ImageLargeURL, artist.Country, tagsJSON, artist.Biography,
 		nullableArtistIdentifier(artist.SpotifyID),
 		artist.Followers, artist.Popularity,
 		genresJSON, externalURLsJSON,

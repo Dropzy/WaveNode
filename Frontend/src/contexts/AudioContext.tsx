@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode, useRef } from 'react';
-import { Music, recentlyPlayedAPI } from '../services/api';
+import { Music, recentlyPlayedAPI, scrobbleAPI } from '../services/api';
 import { audioService } from '../services/audioService';
 import { useAuth } from './AuthContext';
 import { getTrackArtworkUrl } from '../utils/mediaUrl';
@@ -133,6 +133,8 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
   const currentTrackIndexRef = useRef(initialSession.currentTrackIndex);
   const isShuffledRef = useRef(initialSession.isShuffled);
   const repeatModeRef = useRef<'none' | 'one' | 'all'>(initialSession.repeatMode);
+  const listenedScrobbledTrackRef = useRef<string | null>(null);
+  const nowPlayingScrobbledTrackRef = useRef<string | null>(null);
 
   useEffect(() => {
     queueRef.current = playlistQueue;
@@ -235,6 +237,13 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
       // External live streams are not library tracks and cannot be added to track history.
       if (!track.is_external) {
         await addToRecentlyPlayed(track);
+        listenedScrobbledTrackRef.current = null;
+        if (nowPlayingScrobbledTrackRef.current !== track.id) {
+          nowPlayingScrobbledTrackRef.current = track.id;
+          void scrobbleAPI.nowPlaying(track.id).catch(error => {
+            console.error('Failed to update now playing:', error);
+          });
+        }
       }
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) {
@@ -246,6 +255,23 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
       }
     }
   }, [addToRecentlyPlayed]);
+
+  useEffect(() => {
+    if (!currentTrack || currentTrack.is_external || !isPlaying || duration <= 0) {
+      return;
+    }
+    if (listenedScrobbledTrackRef.current === currentTrack.id) {
+      return;
+    }
+    const threshold = Math.min(duration / 2, 240);
+    if (currentTime < threshold) {
+      return;
+    }
+    listenedScrobbledTrackRef.current = currentTrack.id;
+    void scrobbleAPI.listened(currentTrack.id).catch(error => {
+      console.error('Failed to scrobble track:', error);
+    });
+  }, [currentTrack, currentTime, duration, isPlaying]);
 
   const togglePlayPause = async () => {
     try {

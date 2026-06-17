@@ -273,6 +273,82 @@ func (db *DB) runMigrations() error {
 		return fmt.Errorf("failed to ensure artist relationship: %v", err)
 	}
 
+	artistMetadataPipelineMigration := `
+		CREATE TABLE IF NOT EXISTS artist_aliases (
+			id BIGSERIAL PRIMARY KEY,
+			artist_id VARCHAR(255) NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+			alias TEXT NOT NULL,
+			source VARCHAR(80) NOT NULL DEFAULT 'manual',
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE (artist_id, alias, source)
+		);
+		CREATE INDEX IF NOT EXISTS idx_artist_aliases_alias ON artist_aliases(alias);
+
+		CREATE TABLE IF NOT EXISTS artist_external_ids (
+			artist_id VARCHAR(255) NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+			provider VARCHAR(80) NOT NULL,
+			external_id TEXT NOT NULL,
+			external_url TEXT,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (artist_id, provider)
+		);
+
+		CREATE TABLE IF NOT EXISTS artist_images (
+			id BIGSERIAL PRIMARY KEY,
+			artist_id VARCHAR(255) NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+			source VARCHAR(80) NOT NULL,
+			image_url TEXT NOT NULL,
+			thumbnail_url TEXT,
+			source_page_url TEXT,
+			license_name TEXT,
+			license_url TEXT,
+			author_name TEXT,
+			attribution_text TEXT,
+			width INTEGER NOT NULL DEFAULT 0,
+			height INTEGER NOT NULL DEFAULT 0,
+			mime_type VARCHAR(100),
+			confidence_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+			is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE (artist_id, source, image_url)
+		);
+		CREATE INDEX IF NOT EXISTS idx_artist_images_artist_primary ON artist_images(artist_id, is_primary);
+
+		CREATE TABLE IF NOT EXISTS artist_metadata_refresh_jobs (
+			id BIGSERIAL PRIMARY KEY,
+			artist_id VARCHAR(255) REFERENCES artists(id) ON DELETE CASCADE,
+			status VARCHAR(40) NOT NULL DEFAULT 'pending',
+			error TEXT,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			started_at TIMESTAMP,
+			completed_at TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS uploaded_artist_images (
+			id BIGSERIAL PRIMARY KEY,
+			artist_id VARCHAR(255) NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+			image_url TEXT NOT NULL,
+			original_filename TEXT,
+			author_name TEXT,
+			attribution_text TEXT,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS source_api_cache (
+			cache_key TEXT PRIMARY KEY,
+			provider VARCHAR(80) NOT NULL,
+			response_body BYTEA NOT NULL,
+			expires_at TIMESTAMP NOT NULL,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_source_api_cache_expires ON source_api_cache(expires_at);
+	`
+	if _, err := db.conn.Exec(artistMetadataPipelineMigration); err != nil {
+		return fmt.Errorf("failed to create artist metadata pipeline tables: %v", err)
+	}
+
 	// Ensure spotify_id and popularity columns exist in artists table
 	spotifyColumnsMigration := `
 		ALTER TABLE artists ADD COLUMN IF NOT EXISTS spotify_id VARCHAR(255);

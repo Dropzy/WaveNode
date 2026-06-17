@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import styled from 'styled-components'
 import { useNavigate } from 'react-router-dom'
-import { Play, Disc, Plus, ListMusic, Edit, Trash2, User, Music2, MoreVertical, Download, PlusCircle, Heart, X, Search, ArrowUpDown, Check, List, Rows3, Sparkles } from 'lucide-react'
+import { Play, Disc, Plus, ListMusic, Edit, Trash2, User, Music2, MoreVertical, Download, PlusCircle, Heart, X, Search, ArrowUpDown, Check, List, Rows3, Sparkles, Upload } from 'lucide-react'
 import { albumAPI, musicAPI, playlistAPI, artistAPI, likedTracksAPI } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useAudio } from '../contexts/AudioContext'
@@ -211,7 +211,7 @@ const PlayButton = styled.button`
   right: 8px;
   width: 48px;
   height: 48px;
-  background-color: #1db954;
+  background: ${({ theme }) => theme.colors.accentGradient};
   border: none;
   border-radius: 50%;
   display: flex;
@@ -224,7 +224,7 @@ const PlayButton = styled.button`
   z-index: 5;
 
   &:hover {
-    background-color: #1ed760;
+    background: ${({ theme }) => theme.colors.accentGradient};
     transform: scale(1.05);
   }
   
@@ -276,7 +276,7 @@ const TabButton = styled.button<{ $active: boolean }>`
   cursor: pointer;
   font-size: 14px;
   font-weight: 600;
-  border-bottom: 2px solid ${props => props.$active ? '#1db954' : 'transparent'};
+  border-bottom: 2px solid ${props => props.$active ? props.theme.colors.accent : 'transparent'};
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
@@ -345,7 +345,7 @@ const SortButton = styled.button<{ $open?: boolean }>`
   align-items: center;
   gap: 8px;
   padding: 0 12px;
-  border: 1px solid ${props => props.$open ? '#1ed760' : '#444'};
+  border: 1px solid ${props => props.$open ? props.theme.colors.accent : props.theme.colors.borderStrong};
   border-radius: 20px;
   color: ${props => props.$open ? '#fff' : '#b3b3b3'};
   background: #242424;
@@ -399,7 +399,7 @@ const SortMenuItem = styled.button<{ $active?: boolean }>`
   padding: 10px;
   border: 0;
   border-radius: 5px;
-  color: ${props => props.$active ? '#1ed760' : '#fff'};
+  color: ${props => props.$active ? props.theme.colors.accent : props.theme.colors.text};
   background: transparent;
   font-size: 14px;
   font-weight: 600;
@@ -465,10 +465,10 @@ const TrackItem = styled.div<{ $selected?: boolean; $compact?: boolean }>`
 `
 
 const PlayAllButton = styled.button`
-  background-color: #1db954;
+  background: ${({ theme }) => theme.colors.accentGradient};
   border: none;
   border-radius: 20px;
-  color: #fff;
+  color: ${({ theme }) => theme.colors.accentText};
   padding: 8px 16px;
   font-size: 14px;
   font-weight: 600;
@@ -479,7 +479,7 @@ const PlayAllButton = styled.button`
   transition: all 0.2s ease;
 
   &:hover {
-    background-color: #1ed760;
+    background: ${({ theme }) => theme.colors.accentGradient};
     transform: scale(1.05);
   }
   
@@ -491,10 +491,10 @@ const PlayAllButton = styled.button`
 `
 
 const AddButton = styled.button`
-  background-color: #1db954;
+  background: ${({ theme }) => theme.colors.accentGradient};
   border: none;
   border-radius: 20px;
-  color: #fff;
+  color: ${({ theme }) => theme.colors.accentText};
   padding: 8px 16px;
   font-size: 14px;
   font-weight: 600;
@@ -505,7 +505,7 @@ const AddButton = styled.button`
   transition: all 0.2s ease;
 
   &:hover {
-    background-color: #1ed760;
+    background: ${({ theme }) => theme.colors.accentGradient};
     transform: scale(1.05);
   }
   
@@ -569,7 +569,7 @@ const AlbumCard = styled.div`
   }
 
   &:focus-visible {
-    outline: 2px solid #1ed760;
+    outline: 2px solid ${({ theme }) => theme.colors.accent};
     outline-offset: 2px;
   }
 
@@ -671,7 +671,7 @@ const PlayIcon = styled.button<{ $visible?: boolean }>`
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: #1db954;
+  color: ${({ theme }) => theme.colors.accent};
   opacity: ${props => props.$visible ? 1 : 0};
   transition: opacity 0.2s ease;
   cursor: pointer;
@@ -681,7 +681,7 @@ const PlayIcon = styled.button<{ $visible?: boolean }>`
   place-items: center;
   
   &:hover {
-    color: #1ed760;
+    color: ${({ theme }) => theme.colors.accentHover};
     background: rgba(255, 255, 255, 0.08);
   }
 `
@@ -972,7 +972,7 @@ const Input = styled.input`
 
   &:focus {
     outline: none;
-    border-color: #1db954;
+    border-color: ${({ theme }) => theme.colors.accent};
     background-color: #4e4e4e;
   }
 
@@ -996,7 +996,7 @@ const Textarea = styled.textarea`
 
   &:focus {
     outline: none;
-    border-color: #1db954;
+    border-color: ${({ theme }) => theme.colors.accent};
     background-color: #4e4e4e;
   }
 
@@ -1023,11 +1023,11 @@ const Button = styled.button<{ $variant?: 'primary' | 'secondary' | 'danger' }>`
   min-width: 100px;
 
   ${props => props.$variant === 'primary' ? `
-    background-color: #1db954;
-    color: #fff;
+    background: ${props.theme.colors.accentGradient};
+    color: ${props.theme.colors.accentText};
 
     &:hover {
-      background-color: #1ed760;
+      background: ${props.theme.colors.accentGradient};
       transform: scale(1.05);
     }
 
@@ -1093,7 +1093,7 @@ const ActionButton = styled.button<{ $variant?: 'edit' | 'delete' }>`
 
   ${props => props.$variant === 'edit' ? `
     &:hover {
-      background-color: #1db954;
+      background: ${props.theme.colors.accentGradient};
       transform: scale(1.05);
     }
   ` : `
@@ -1127,7 +1127,7 @@ const DeleteModalText = styled.p`
 `
 
 const DeleteModalPlaylistName = styled.span`
-  color: #1db954;
+  color: ${({ theme }) => theme.colors.accent};
   font-weight: 600;
 `
 
@@ -1143,7 +1143,7 @@ const Select = styled.select`
 
   &:focus {
     outline: none;
-    border-color: #1db954;
+    border-color: ${({ theme }) => theme.colors.accent};
     background-color: #4e4e4e;
   }
 
@@ -1235,9 +1235,11 @@ export const Library: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isAddingToPlaylist, setIsAddingToPlaylist] = useState(false)
+  const [isImportingPlaylist, setIsImportingPlaylist] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
   const [addToPlaylistError, setAddToPlaylistError] = useState<string | null>(null)
+  const importPlaylistInput = useRef<HTMLInputElement | null>(null)
 
   const loadLibraryData = useCallback(async () => {
     const results = await Promise.allSettled([
@@ -1585,6 +1587,32 @@ export const Library: React.FC = () => {
   }
 
   // Create playlist handlers
+  const handleImportPlaylist = async (file?: File) => {
+    if (!file) return
+    setIsImportingPlaylist(true)
+    try {
+      const importedPlaylist = await playlistAPI.importM3U(file)
+      if (!importedPlaylist) {
+        window.alert('No tracks in that M3U file matched this library.')
+        return
+      }
+      await loadLibraryData()
+      const windowWithRefresh = window as { refreshSidebarPlaylists?: () => Promise<void> }
+      if (windowWithRefresh.refreshSidebarPlaylists) {
+        await windowWithRefresh.refreshSidebarPlaylists()
+      }
+      navigate(`/playlist/${importedPlaylist.id}`)
+    } catch (err) {
+      console.error('Error importing playlist:', err)
+      window.alert('No tracks in that M3U file matched this library.')
+    } finally {
+      setIsImportingPlaylist(false)
+      if (importPlaylistInput.current) {
+        importPlaylistInput.current.value = ''
+      }
+    }
+  }
+
   const handleCreatePlaylist = async () => {
     if (!playlistName.trim()) {
       setCreateError('Playlist name is required')
@@ -1895,6 +1923,10 @@ export const Library: React.FC = () => {
       <SectionHeader>
         <SectionTitle>Playlists</SectionTitle>
         <div style={{ display: 'flex', gap: '10px' }}>
+          <AddButton onClick={() => importPlaylistInput.current?.click()} disabled={isImportingPlaylist}>
+            <Upload size={16} />
+            {isImportingPlaylist ? 'Importing...' : 'Import M3U'}
+          </AddButton>
           <AddButton onClick={() => navigate('/smart-playlist/new')}>
             <Sparkles size={16} />
             Smart Playlist
@@ -1903,6 +1935,13 @@ export const Library: React.FC = () => {
             <Plus size={16} />
             Create Playlist
           </AddButton>
+          <input
+            ref={importPlaylistInput}
+            type="file"
+            accept=".m3u,.m3u8,audio/x-mpegurl"
+            hidden
+            onChange={event => void handleImportPlaylist(event.target.files?.[0])}
+          />
         </div>
       </SectionHeader>
       {filteredPlaylists.length === 0 ? (

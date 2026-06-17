@@ -34,6 +34,26 @@ type Artist struct {
 	UpdatedAt      time.Time         `json:"updated_at"`
 }
 
+type ArtistImage struct {
+	ID              int64     `json:"id"`
+	ArtistID        string    `json:"artist_id"`
+	Source          string    `json:"source"`
+	ImageURL        string    `json:"image_url"`
+	ThumbnailURL    string    `json:"thumbnail_url"`
+	SourcePageURL   string    `json:"source_page_url"`
+	LicenseName     string    `json:"license_name"`
+	LicenseURL      string    `json:"license_url"`
+	AuthorName      string    `json:"author_name"`
+	AttributionText string    `json:"attribution_text"`
+	Width           int       `json:"width"`
+	Height          int       `json:"height"`
+	MimeType        string    `json:"mime_type"`
+	ConfidenceScore float64   `json:"confidence_score"`
+	IsPrimary       bool      `json:"is_primary"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
 // Music represents a music track
 type Music struct {
 	ID                     string     `json:"id"`

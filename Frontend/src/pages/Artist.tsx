@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Play, Music, User, Shuffle } from 'lucide-react'
-import { artistAPI, ArtistTracksResponse, Music as Track } from '../services/api'
+import { artistAPI, ArtistImage, ArtistTracksResponse, Music as Track } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useAudio } from '../contexts/AudioContext'
 import { getAlbumArtworkUrl, getArtworkGradient, getTrackArtworkUrl } from '../utils/mediaUrl'
@@ -139,6 +139,24 @@ const ArtistActions = styled.div`
   @media (max-width: 768px) {
     justify-content: center;
     margin-bottom: 20px;
+  }
+`
+
+const Attribution = styled.div`
+  max-width: 760px;
+  margin: -8px 0 20px;
+  color: #b3b3b3;
+  font-size: 12px;
+  line-height: 1.45;
+
+  a {
+    color: #d8d8d8;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  @media (max-width: 768px) {
+    margin: -4px auto 18px;
   }
 `
 
@@ -429,6 +447,7 @@ export const Artist: React.FC = () => {
   const { playTrack, playPlaylist, playPlaylistShuffled } = useAudio()
   const navigate = useNavigate()
   const [artistData, setArtistData] = useState<ArtistTracksResponse | null>(null)
+  const [artistImage, setArtistImage] = useState<ArtistImage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [hoveredTrackIndex, setHoveredTrackIndex] = useState<number | null>(null)
@@ -450,6 +469,8 @@ export const Artist: React.FC = () => {
         console.log('Artist data response:', data)
         if (data && data.artist && data.tracks) {
           setArtistData(data)
+          const image = await artistAPI.getImage(data.artist.id)
+          setArtistImage(image)
           setError(null)
         } else {
           console.error('Invalid artist data structure:', data)
@@ -515,7 +536,7 @@ export const Artist: React.FC = () => {
     )
   }
 
-  const artistArtworkUrl = artistData.tracks
+  const artistArtworkUrl = artistImage?.image_url || artistImage?.thumbnail_url || artistData.tracks
     .map(getTrackArtworkUrl)
     .find(Boolean)
 
@@ -555,6 +576,18 @@ export const Artist: React.FC = () => {
               Shuffle
             </ShuffleButton>
           </ArtistActions>
+          {artistImage?.attribution_text && (
+            <Attribution>
+              {artistImage.source_page_url ? (
+                <a href={artistImage.source_page_url} target="_blank" rel="noreferrer">
+                  {artistImage.attribution_text}
+                </a>
+              ) : artistImage.attribution_text}
+              {artistImage.license_name && <> · {artistImage.license_url ? (
+                <a href={artistImage.license_url} target="_blank" rel="noreferrer">{artistImage.license_name}</a>
+              ) : artistImage.license_name}</>}
+            </Attribution>
+          )}
         </ArtistInfo>
       </Header>
 

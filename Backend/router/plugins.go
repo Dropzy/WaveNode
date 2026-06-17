@@ -1,12 +1,16 @@
 package router
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"music-server/database"
 
@@ -258,6 +262,127 @@ func (r *Router) getPluginHomeRows(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "data": rows})
+}
+
+func (r *Router) getPluginRadioMetadata(w http.ResponseWriter, req *http.Request) {
+	streamURL := strings.TrimSpace(req.URL.Query().Get("stream_url"))
+	if streamURL == "" {
+		writeJSONError(w, http.StatusBadRequest, "stream_url is required")
+		return
+	}
+
+	item, ok, err := r.findPluginRadioItem(streamURL)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeJSONError(w, http.StatusForbidden, "stream_url is not provided by an enabled radio plugin")
+		return
+	}
+
+	title, metadataErr := fetchICYStreamTitle(streamURL)
+	if metadataErr != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"data": map[string]interface{}{
+				"station_title": item.Title,
+				"stream_title":  "",
+				"error":         metadataErr.Error(),
+			},
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"data": map[string]interface{}{
+			"station_title": item.Title,
+			"stream_title":  title,
+		},
+	})
+}
+
+func (r *Router) findPluginRadioItem(streamURL string) (PluginRowItem, bool, error) {
+	rows, err := r.pluginHomeRows()
+	if err != nil {
+		return PluginRowItem{}, false, err
+	}
+	for _, row := range rows {
+		if row.Type != "radio" {
+			continue
+		}
+		for _, item := range row.Items {
+			if item.StreamURL == streamURL {
+				return item, true, nil
+			}
+		}
+	}
+	return PluginRowItem{}, false, nil
+}
+
+func fetchICYStreamTitle(streamURL string) (string, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	request, err := http.NewRequest(http.MethodGet, streamURL, nil)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Icy-MetaData", "1")
+	request.Header.Set("User-Agent", "WaveNode/0.1 radio metadata")
+
+	response, err := client.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return "", fmt.Errorf("station returned %s", response.Status)
+	}
+
+	metaInterval, err := strconv.Atoi(response.Header.Get("icy-metaint"))
+	if err != nil || metaInterval <= 0 {
+		return "", fmt.Errorf("station does not expose ICY metadata")
+	}
+
+	reader := bufio.NewReader(response.Body)
+	for attempts := 0; attempts < 8; attempts++ {
+		if _, err := io.CopyN(io.Discard, reader, int64(metaInterval)); err != nil {
+			return "", err
+		}
+
+		lengthByte, err := reader.ReadByte()
+		if err != nil {
+			return "", err
+		}
+		metadataLength := int(lengthByte) * 16
+		if metadataLength == 0 {
+			continue
+		}
+
+		block := make([]byte, metadataLength)
+		if _, err := io.ReadFull(reader, block); err != nil {
+			return "", err
+		}
+		if title := parseICYStreamTitle(string(block)); title != "" {
+			return title, nil
+		}
+	}
+
+	return "", fmt.Errorf("no current stream title found")
+}
+
+func parseICYStreamTitle(metadata string) string {
+	const marker = "StreamTitle='"
+	start := strings.Index(metadata, marker)
+	if start < 0 {
+		return ""
+	}
+	start += len(marker)
+	end := strings.Index(metadata[start:], "';")
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(metadata[start : start+end])
 }
 
 func (r *Router) pluginHomeRows() ([]runtimeHomeRow, error) {

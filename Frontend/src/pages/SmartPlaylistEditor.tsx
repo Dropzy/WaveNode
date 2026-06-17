@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import styled from 'styled-components'
 import { ArrowLeft, Plus, Sparkles, Trash2 } from 'lucide-react'
 import {
@@ -49,6 +49,7 @@ function defaultOperator(field: SmartPlaylistCondition['field']) {
 export default function SmartPlaylistEditor() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [rules, setRules] = useState<SmartPlaylistRules>(defaultRules)
@@ -75,6 +76,12 @@ export default function SmartPlaylistEditor() {
       .catch(() => setError('Unable to load this smart playlist.'))
       .finally(() => setLoading(false))
   }, [id])
+
+  useEffect(() => {
+    if (id) return
+    setName(searchParams.get('name') || '')
+    setDescription(searchParams.get('description') || '')
+  }, [id, searchParams])
 
   const hasIncompleteCondition = useMemo(
     () => {

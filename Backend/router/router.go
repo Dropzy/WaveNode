@@ -70,7 +70,7 @@ func NewRouter(
 	scanStore := database.NewScanStore(db)
 	enrichmentHandler := NewEnrichmentHandler(db, scanStore)
 
-	return &Router{
+	router := &Router{
 		authHandler:       authHandler,
 		musicHandler:      musicHandler,
 		playlistHandler:   playlistHandler,
@@ -81,6 +81,8 @@ func NewRouter(
 		scanStore:         scanStore,
 		corsConfig:        corsConfig,
 	}
+	router.startArtistMetadataRefreshLoop()
+	return router
 }
 
 // SetEnrichmentScanner sets enrichment scanner on enrichment handler
@@ -147,7 +149,9 @@ func (r *Router) SetupRoutes() *mux.Router {
 	protected.HandleFunc("/albums/{id}/tracks", r.getAlbumTracksByID).Methods("GET", "OPTIONS") // New ID-based endpoint
 	protected.HandleFunc("/albums/{name}/tracks", r.getAlbumTracks).Methods("GET", "OPTIONS")   // Keep name-based for backward compatibility
 	protected.HandleFunc("/artists", r.getArtists).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/artists/lookup", r.lookupArtistMetadata).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/artists/{id}", r.getArtistByID).Methods("GET", "OPTIONS") // New hash-based endpoint
+	protected.HandleFunc("/artists/{id}/image", r.getArtistImage).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/artists/{id}/tracks", r.getArtistTracksByID).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/search", r.comprehensiveSearch).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/liked-tracks", r.getLikedTracks).Methods("GET", "OPTIONS")
@@ -158,10 +162,22 @@ func (r *Router) SetupRoutes() *mux.Router {
 	protected.HandleFunc("/ratings/{id}", r.setRating).Methods("PUT", "OPTIONS")
 	protected.HandleFunc("/playback-profile", r.getPlaybackProfile).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/playback-profile", r.updatePlaybackProfile).Methods("PUT", "OPTIONS")
+	protected.HandleFunc("/scrobble/settings", r.getScrobbleSettings).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/scrobble/settings", r.updateScrobbleSettings).Methods("PUT", "OPTIONS")
+	protected.HandleFunc("/scrobble/lastfm/start", r.startLastFMAuth).Methods("POST", "OPTIONS")
+	protected.HandleFunc("/scrobble/lastfm/complete", r.completeLastFMAuth).Methods("POST", "OPTIONS")
+	protected.HandleFunc("/scrobble/lastfm", r.disconnectLastFM).Methods("DELETE", "OPTIONS")
+	protected.HandleFunc("/scrobble/now-playing/{id}", r.scrobbleNowPlaying).Methods("POST", "OPTIONS")
+	protected.HandleFunc("/scrobble/listened/{id}", r.scrobbleListened).Methods("POST", "OPTIONS")
 	protected.HandleFunc("/history", r.getListeningHistory).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/history/export", r.exportListeningHistory).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/history", r.clearListeningHistory).Methods("DELETE", "OPTIONS")
 	protected.HandleFunc("/plugins/home-rows", r.getPluginHomeRows).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/plugins/radio-metadata", r.getPluginRadioMetadata).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/discovery/settings", r.getDiscoverySettings).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/discovery/settings", r.updateDiscoverySettings).Methods("PUT", "OPTIONS")
+	protected.HandleFunc("/discovery/preview", r.previewDiscovery).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/discovery/import", r.importDiscoveryPlaylist).Methods("POST", "OPTIONS")
 
 	// Playlist routes
 	protected.HandleFunc("/playlists", r.playlistHandler.GetPlaylists).Methods("GET", "OPTIONS")
@@ -209,6 +225,8 @@ func (r *Router) SetupRoutes() *mux.Router {
 	admin.HandleFunc("/system/status", r.getSystemStatus).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/library/diagnostics", r.getLibraryDiagnostics).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/library", r.clearLibrary).Methods("DELETE", "OPTIONS")
+	admin.HandleFunc("/integrations/lastfm", r.getAdminLastFMIntegration).Methods("GET", "OPTIONS")
+	admin.HandleFunc("/integrations/lastfm", r.updateAdminLastFMIntegration).Methods("PUT", "OPTIONS")
 	admin.HandleFunc("/stats", r.getStats).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/logs", r.getLogs).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/users", r.getUsers).Methods("GET", "OPTIONS")
@@ -219,6 +237,10 @@ func (r *Router) SetupRoutes() *mux.Router {
 	admin.HandleFunc("/scans", r.getScanHistory).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/scans/{id}", r.getScanDetails).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/artists/discover-images", r.discoverArtistImages).Methods("POST", "OPTIONS")
+	admin.HandleFunc("/artists/{id}/refresh-metadata", r.refreshArtistMetadataEndpoint).Methods("POST", "OPTIONS")
+	admin.HandleFunc("/artists/{id}/image-candidates", r.listArtistImageCandidates).Methods("GET", "OPTIONS")
+	admin.HandleFunc("/artists/{id}/image-primary", r.setPrimaryArtistImage).Methods("PUT", "OPTIONS")
+	admin.HandleFunc("/artists/{id}/image-candidates/{imageId}", r.updateArtistImageAttribution).Methods("PUT", "OPTIONS")
 	admin.HandleFunc("/artists/{id}/image", r.uploadArtistImage).Methods("POST", "OPTIONS")
 	admin.HandleFunc("/artists/{id}/image", r.deleteArtistImage).Methods("DELETE", "OPTIONS")
 	admin.HandleFunc("/plugins", r.getAdminPlugins).Methods("GET", "OPTIONS")

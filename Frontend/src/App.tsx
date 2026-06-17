@@ -19,6 +19,7 @@ import Account from './pages/Account';
 import SmartPlaylistEditor from './pages/SmartPlaylistEditor';
 import History from './pages/History';
 import { GlobalStyle } from './styles/GlobalStyle';
+import { AppThemeProvider } from './contexts/ThemeContext';
 import { setupAPI, SetupStatus } from './services/api';
 import { Loader2 } from 'lucide-react';
 import styled from 'styled-components';
@@ -91,12 +92,12 @@ function SetupAwareApp() {
 
 function App() {
   return (
-    <>
+    <AppThemeProvider>
       <GlobalStyle />
       <AuthProvider>
         <SetupAwareApp />
       </AuthProvider>
-    </>
+    </AppThemeProvider>
   );
 }
 
@@ -106,15 +107,15 @@ const GateState = styled.main`
   place-content: center;
   justify-items: center;
   gap: 14px;
-  background: #0b100d;
-  color: #fff;
+  background: ${({ theme }) => theme.colors.background};
+  color: ${({ theme }) => theme.colors.text};
 
-  p { color: #aeb6b0; }
+  p { color: ${({ theme }) => theme.colors.muted}; }
   button {
     padding: 11px 18px;
     border-radius: 999px;
-    background: #1ed760;
-    color: #07130b;
+    background: ${({ theme }) => theme.colors.accentGradient};
+    color: ${({ theme }) => theme.colors.accentText};
     font-weight: 800;
   }
 `

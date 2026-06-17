@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { useAudio } from '../contexts/AudioContext'
 import { Queue } from './Queue'
-import { likedTracksAPI, ratingsAPI } from '../services/api'
+import { likedTracksAPI, pluginsAPI, ratingsAPI } from '../services/api'
 import { getTrackArtworkUrl } from '../utils/mediaUrl'
 import { 
   Play, 
@@ -23,13 +23,15 @@ import {
 } from 'lucide-react'
 
 const PlayerContainer = styled.footer`
-  height: 90px;
-  background-color: #181818;
-  border-top: 1px solid #282828;
+  height: 104px;
+  background: ${({ theme }) => theme.colors.playerBg};
+  border-top: 1px solid ${({ theme }) => theme.colors.border};
+  box-shadow: 0 -18px 55px ${({ theme }) => theme.colors.shadow}, 0 -1px 24px ${({ theme }) => theme.colors.playerGlow};
+  backdrop-filter: blur(18px);
   display: flex;
   align-items: center;
-  padding: 0 16px;
-  gap: 16px;
+  padding: 12px 18px;
+  gap: 18px;
   position: relative;
   
   @media (max-width: 768px) {
@@ -39,9 +41,9 @@ const PlayerContainer = styled.footer`
     right: 0;
     z-index: 1000;
     height: auto;
-    padding: 8px 16px;
+    padding: 10px 14px;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
   }
 `
 
@@ -62,17 +64,21 @@ const MobileTrackInfo = styled.div`
   gap: 12px;
   flex: 1;
   min-width: 0;
+  padding: 6px;
+  border-radius: 18px;
+  background: ${({ theme }) => theme.colors.controlBg};
 `
 
 const MobileAlbumArt = styled.div`
-  width: 40px;
-  height: 40px;
-  background-color: #282828;
-  border-radius: 4px;
+  width: 44px;
+  height: 44px;
+  background: ${({ theme }) => theme.colors.surfaceStrong};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   font-size: 10px;
   flex-shrink: 0;
   overflow: hidden;
@@ -93,16 +99,16 @@ const MobileTrackDetails = styled.div`
 `
 
 const MobileTrackName = styled.div`
-  color: #fff;
+  color: ${({ theme }) => theme.colors.text};
   font-size: 12px;
-  font-weight: 400;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 `
 
 const MobileArtistName = styled.div`
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   font-size: 10px;
   white-space: nowrap;
   overflow: hidden;
@@ -110,9 +116,10 @@ const MobileArtistName = styled.div`
 `
 
 const MobileMoreButton = styled.button`
-  background: none;
-  border: none;
-  color: #b3b3b3;
+  background: ${({ theme }) => theme.colors.controlBg};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 14px;
+  color: ${({ theme }) => theme.colors.muted};
   cursor: pointer;
   padding: 8px;
   display: flex;
@@ -120,7 +127,8 @@ const MobileMoreButton = styled.button`
   justify-content: center;
   
   &:hover {
-    color: #fff;
+    color: ${({ theme }) => theme.colors.text};
+    border-color: ${({ theme }) => theme.colors.borderStrong};
   }
   
   svg {
@@ -133,7 +141,7 @@ const DesktopLayout = styled.div`
   display: flex;
   align-items: center;
   width: 100%;
-  gap: 16px;
+  gap: 18px;
   
   @media (max-width: 768px) {
     display: none;
@@ -143,22 +151,29 @@ const DesktopLayout = styled.div`
 const TrackInfo = styled.div`
   display: flex;
   align-items: center;
-  gap: 14px;
-  min-width: 180px;
-  flex: 1;
+  gap: 12px;
+  min-width: 260px;
+  max-width: 460px;
+  flex: 1.15;
+  padding: 10px 12px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 24px;
+  background: ${({ theme }) => theme.colors.surfaceSoft};
 `
 
 const AlbumArt = styled.div`
-  width: 56px;
-  height: 56px;
-  background-color: #282828;
-  border-radius: 4px;
+  width: 64px;
+  height: 64px;
+  background: ${({ theme }) => theme.colors.surfaceStrong};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   font-size: 12px;
   overflow: hidden;
+  box-shadow: 0 14px 32px ${({ theme }) => theme.colors.shadow};
 
   img {
     width: 100%;
@@ -170,22 +185,30 @@ const AlbumArt = styled.div`
 const TrackDetails = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
   flex: 1;
 `
 
+const NowPlayingLabel = styled.div`
+  color: ${({ theme }) => theme.colors.accent};
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+`
+
 const TrackName = styled.div`
-  color: #fff;
+  color: ${({ theme }) => theme.colors.text};
   font-size: 14px;
-  font-weight: 400;
+  font-weight: 800;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 `
 
 const ArtistName = styled.div`
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   font-size: 11px;
   white-space: nowrap;
   overflow: hidden;
@@ -213,7 +236,11 @@ const PlayerControls = styled.div`
 const ControlButtons = styled.div`
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 999px;
+  background: ${({ theme }) => theme.colors.controlBg};
   
   @media (max-width: 768px) {
     gap: 12px;
@@ -223,7 +250,7 @@ const ControlButtons = styled.div`
 const ControlButton = styled.button`
   background: none;
   border: none;
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
@@ -231,26 +258,28 @@ const ControlButton = styled.button`
   justify-content: center;
 
   &:hover {
-    color: #fff;
+    color: ${({ theme }) => theme.colors.text};
     transform: scale(1.1);
   }
 
   &:disabled {
-    color: #5a5a5a;
+    color: ${({ theme }) => theme.colors.subtle};
+    opacity: 0.45;
     cursor: not-allowed;
     transform: none;
   }
 
   &.play-button {
-    width: 32px;
-    height: 32px;
-    background-color: #fff;
-    border-radius: 50%;
-    color: #000;
+    width: 44px;
+    height: 44px;
+    background: ${({ theme }) => theme.colors.accentGradient};
+    border-radius: 16px;
+    color: ${({ theme }) => theme.colors.accentText};
+    box-shadow: 0 14px 28px ${({ theme }) => theme.colors.playerGlow};
 
     &:hover {
       transform: scale(1.05);
-      background-color: #f0f0f0;
+      filter: brightness(1.08);
     }
     
     @media (max-width: 768px) {
@@ -300,7 +329,7 @@ const ProgressBar = styled.div`
 `
 
 const Time = styled.span`
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   font-size: 11px;
   min-width: 40px;
   text-align: center;
@@ -313,14 +342,14 @@ const Time = styled.span`
 
 const ProgressTrack = styled.div`
   flex: 1;
-  height: 4px;
-  background-color: #535353;
-  border-radius: 2px;
+  height: 6px;
+  background: ${({ theme }) => theme.colors.progressTrack};
+  border-radius: 999px;
   position: relative;
   cursor: pointer;
 
   &:hover {
-    background-color: #6a6a6a;
+    background: ${({ theme }) => theme.colors.borderStrong};
   }
   
   @media (max-width: 768px) {
@@ -330,8 +359,8 @@ const ProgressTrack = styled.div`
 
 const ProgressFill = styled.div`
   height: 100%;
-  background-color: #fff;
-  border-radius: 2px;
+  background: ${({ theme }) => theme.colors.accentGradient};
+  border-radius: 999px;
   width: 30%;
   position: relative;
 `
@@ -342,7 +371,8 @@ const ProgressHandle = styled.div`
   top: -4px;
   width: 12px;
   height: 12px;
-  background-color: #fff;
+  background-color: ${({ theme }) => theme.colors.accentHover};
+  box-shadow: 0 0 0 5px ${({ theme }) => theme.colors.accentSoft};
   border-radius: 50%;
   opacity: 0;
   transition: opacity 0.2s ease;
@@ -356,7 +386,7 @@ const DesktopPlayerControls = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex: 2;
   
   @media (max-width: 768px) {
@@ -371,6 +401,10 @@ const ExtraControls = styled.div`
   gap: 8px;
   flex: 1;
   min-width: 180px;
+  padding: 10px 12px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 20px;
+  background: ${({ theme }) => theme.colors.surfaceSoft};
   
   @media (max-width: 768px) {
     display: none;
@@ -381,6 +415,7 @@ const VolumeControl = styled.div`
   display: flex;
   align-items: center;
   gap: 8px;
+  padding-left: 4px;
 `
 
 const VolumeSlider = styled.input`
@@ -390,10 +425,10 @@ const VolumeSlider = styled.input`
   height: 4px;
   background: linear-gradient(
     to right,
-    #fff 0%,
-    #fff var(--volume-percent),
-    #535353 var(--volume-percent),
-    #535353 100%
+    ${({ theme }) => theme.colors.accent} 0%,
+    ${({ theme }) => theme.colors.accent} var(--volume-percent),
+    ${({ theme }) => theme.colors.progressTrack} var(--volume-percent),
+    ${({ theme }) => theme.colors.progressTrack} 100%
   );
   border-radius: 2px;
   cursor: pointer;
@@ -402,10 +437,10 @@ const VolumeSlider = styled.input`
   &:hover {
     background: linear-gradient(
       to right,
-      #1ed760 0%,
-      #1ed760 var(--volume-percent),
-      #6a6a6a var(--volume-percent),
-      #6a6a6a 100%
+      ${({ theme }) => theme.colors.accentHover} 0%,
+      ${({ theme }) => theme.colors.accentHover} var(--volume-percent),
+      ${({ theme }) => theme.colors.borderStrong} var(--volume-percent),
+      ${({ theme }) => theme.colors.borderStrong} 100%
     );
   }
 
@@ -422,7 +457,7 @@ const VolumeSlider = styled.input`
     margin-top: -4px;
     border: 0;
     border-radius: 50%;
-    background-color: #fff;
+    background-color: ${({ theme }) => theme.colors.accentHover};
     opacity: 0;
   }
 
@@ -434,13 +469,13 @@ const VolumeSlider = styled.input`
   &::-moz-range-track {
     height: 4px;
     border-radius: 2px;
-    background: #535353;
+    background: ${({ theme }) => theme.colors.progressTrack};
   }
 
   &::-moz-range-progress {
     height: 4px;
     border-radius: 2px;
-    background: #fff;
+    background: ${({ theme }) => theme.colors.accent};
   }
 
   &::-moz-range-thumb {
@@ -448,14 +483,14 @@ const VolumeSlider = styled.input`
     height: 12px;
     border: 0;
     border-radius: 50%;
-    background-color: #fff;
+    background-color: ${({ theme }) => theme.colors.accentHover};
   }
 `
 
 const IconButton = styled.button`
   background: none;
   border: none;
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
@@ -463,16 +498,17 @@ const IconButton = styled.button`
   justify-content: center;
 
   &:hover {
-    color: #fff;
+    color: ${({ theme }) => theme.colors.text};
     transform: scale(1.1);
   }
 
   &.active {
-    color: #1db954;
+    color: ${({ theme }) => theme.colors.accent};
   }
 
   &:disabled {
-    color: #535353;
+    color: ${({ theme }) => theme.colors.subtle};
+    opacity: 0.45;
     cursor: not-allowed;
     transform: none;
   }
@@ -497,6 +533,7 @@ export const Player: React.FC = () => {
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [rating, setRating] = useState(0);
+  const [radioStreamTitle, setRadioStreamTitle] = useState('');
   const previousVolumeRef = useRef(1);
   
   const { 
@@ -516,6 +553,11 @@ export const Player: React.FC = () => {
   } = useAudio();
 
   const artworkUrl = getTrackArtworkUrl(currentTrack);
+  const isRadioStream = Boolean(currentTrack?.is_external && currentTrack.stream_url);
+  const displayTitle = isRadioStream && radioStreamTitle ? radioStreamTitle : currentTrack?.title;
+  const displaySubtitle = isRadioStream && radioStreamTitle
+    ? currentTrack?.title
+    : currentTrack?.artist;
 
   useEffect(() => {
     let isCurrent = true;
@@ -554,6 +596,47 @@ export const Player: React.FC = () => {
       isCurrent = false;
     };
   }, [currentTrack]);
+
+  useEffect(() => {
+    setRadioStreamTitle('');
+    if (!currentTrack?.is_external || !currentTrack.stream_url || !isPlaying) {
+      return;
+    }
+
+    let active = true;
+    const loadRadioMetadata = async () => {
+      try {
+        const metadata = await pluginsAPI.getRadioMetadata(currentTrack.stream_url || '');
+        if (active) {
+          setRadioStreamTitle(metadata?.stream_title || '');
+        }
+      } catch {
+        if (active) {
+          setRadioStreamTitle('');
+        }
+      }
+    };
+
+    void loadRadioMetadata();
+    const interval = window.setInterval(() => void loadRadioMetadata(), 20000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [currentTrack, isPlaying]);
+
+  useEffect(() => {
+    if (!radioStreamTitle || !currentTrack?.is_external || !('mediaSession' in navigator)) {
+      return;
+    }
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: radioStreamTitle,
+      artist: currentTrack.title,
+      album: currentTrack.album,
+      artwork: artworkUrl ? [{ src: artworkUrl }] : [],
+    });
+  }, [artworkUrl, currentTrack, radioStreamTitle]);
 
   const formatTime = (seconds: number): string => {
     if (!Number.isFinite(seconds)) return 'LIVE';
@@ -651,10 +734,10 @@ export const Player: React.FC = () => {
           </MobileAlbumArt>
           <MobileTrackDetails>
             <MobileTrackName>
-              {currentTrack ? currentTrack.title : 'No track playing'}
+              {currentTrack ? displayTitle : 'No track playing'}
             </MobileTrackName>
             <MobileArtistName>
-              {currentTrack ? currentTrack.artist : 'Select a track to play'}
+              {currentTrack ? displaySubtitle : 'Select a track to play'}
             </MobileArtistName>
           </MobileTrackDetails>
         </MobileTrackInfo>
@@ -718,34 +801,37 @@ export const Player: React.FC = () => {
             )}
           </AlbumArt>
           <TrackDetails>
+            <NowPlayingLabel>Now playing</NowPlayingLabel>
             <TrackName>
-              {currentTrack ? currentTrack.title : 'No track playing'}
+              {currentTrack ? displayTitle : 'No track playing'}
             </TrackName>
             <ArtistName>
-              {currentTrack ? currentTrack.artist : 'Select a track to play'}
+              {currentTrack ? displaySubtitle : 'Select a track to play'}
             </ArtistName>
           </TrackDetails>
-          <IconButton
-            className={isLiked ? 'active' : ''}
-            onClick={handleToggleLike}
-            disabled={!currentTrack || currentTrack.is_external}
-            title={isLiked ? 'Remove from liked songs' : 'Save to liked songs'}
-          >
-            <Heart size={16} fill={isLiked ? 'currentColor' : 'none'} />
-          </IconButton>
-          <RatingControls aria-label={`Rating: ${rating || 'not rated'}`}>
-            {[1, 2, 3, 4, 5].map(value => (
+          {currentTrack && !currentTrack.is_external && (
+            <>
               <IconButton
-                key={value}
-                className={value <= rating ? 'active' : ''}
-                onClick={() => void handleSetRating(value)}
-                disabled={!currentTrack || currentTrack.is_external}
-                title={value === rating ? 'Remove rating' : `Rate ${value} out of 5`}
+                className={isLiked ? 'active' : ''}
+                onClick={handleToggleLike}
+                title={isLiked ? 'Remove from liked songs' : 'Save to liked songs'}
               >
-                <Star size={13} fill={value <= rating ? 'currentColor' : 'none'} />
+                <Heart size={16} fill={isLiked ? 'currentColor' : 'none'} />
               </IconButton>
-            ))}
-          </RatingControls>
+              <RatingControls aria-label={`Rating: ${rating || 'not rated'}`}>
+                {[1, 2, 3, 4, 5].map(value => (
+                  <IconButton
+                    key={value}
+                    className={value <= rating ? 'active' : ''}
+                    onClick={() => void handleSetRating(value)}
+                    title={value === rating ? 'Remove rating' : `Rate ${value} out of 5`}
+                  >
+                    <Star size={13} fill={value <= rating ? 'currentColor' : 'none'} />
+                  </IconButton>
+                ))}
+              </RatingControls>
+            </>
+          )}
         </TrackInfo>
 
         <DesktopPlayerControls>

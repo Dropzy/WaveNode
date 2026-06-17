@@ -3,13 +3,14 @@ import styled from 'styled-components'
 import { Play, Music as MusicIcon, Clock, Radio } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useAudio } from '../contexts/AudioContext'
-import { pluginsAPI, recentlyPlayedAPI, type Music, type PluginHomeRow, type PluginRowItem } from '../services/api'
+import { discoveryAPI, pluginsAPI, recentlyPlayedAPI, type DiscoveryPreview, type Music, type PluginHomeRow, type PluginRowItem } from '../services/api'
 import { getArtworkGradient, getTrackArtworkUrl } from '../utils/mediaUrl'
 import { TrackActionsMenu } from '../components/TrackActionsMenu'
 
 const HomeContainer = styled.div`
   padding: 24px;
   overflow-y: auto;
+  min-width: 0;
   
   @media (max-width: 768px) {
     padding: 16px;
@@ -19,6 +20,7 @@ const HomeContainer = styled.div`
 
 const Section = styled.section`
   margin-bottom: 40px;
+  min-width: 0;
   
   @media (max-width: 768px) {
     margin-bottom: 32px;
@@ -221,19 +223,44 @@ const LoadingState = styled.div`
 const PluginRows = styled.div`
   display: grid;
   gap: 36px;
+  min-width: 0;
 `
 
 const RadioGrid = styled.div`
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(220px, 280px);
+  display: flex;
+  flex-wrap: nowrap;
   gap: 16px;
-  padding-bottom: 8px;
+  max-width: 100%;
+  margin: 0 -4px;
+  padding: 2px 4px 14px;
   overflow-x: auto;
+  overflow-y: hidden;
   overscroll-behavior-inline: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-color: ${({ theme }) => theme.colors.borderStrong} transparent;
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: ${({ theme }) => theme.colors.borderStrong};
+    border-radius: 999px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: ${({ theme }) => theme.colors.accent};
+  }
 `
 
 const RadioCard = styled.button`
+  flex: 0 0 clamp(240px, 17vw, 300px);
+  scroll-snap-align: start;
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr);
   align-items: center;
@@ -248,6 +275,10 @@ const RadioCard = styled.button`
   &:hover {
     background: #282828;
     transform: translateY(-2px);
+  }
+
+  @media (max-width: 768px) {
+    flex-basis: min(82vw, 320px);
   }
 `
 
@@ -285,6 +316,84 @@ const RadioDetails = styled.div`
   }
 `
 
+const DiscoveryPanel = styled.div`
+  background: ${({ theme }) => theme.colors.surface};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 16px;
+  padding: 20px;
+`
+
+const DiscoveryControls = styled.div`
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+`
+
+const DiscoveryInput = styled.input`
+  flex: 1 1 280px;
+  min-width: 220px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 999px;
+  background: ${({ theme }) => theme.colors.background};
+  color: ${({ theme }) => theme.colors.text};
+  padding: 12px 16px;
+
+  &:focus {
+    border-color: ${({ theme }) => theme.colors.accent};
+    outline: none;
+  }
+`
+
+const DiscoveryButton = styled.button<{ $primary?: boolean }>`
+  border: 1px solid ${({ theme, $primary }) => $primary ? theme.colors.accent : theme.colors.border};
+  border-radius: 999px;
+  background: ${({ theme, $primary }) => $primary ? theme.colors.accent : theme.colors.surfaceSoft};
+  color: ${({ theme, $primary }) => $primary ? theme.colors.accentText : theme.colors.text};
+  padding: 11px 18px;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+`
+
+const DiscoveryStats = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: 14px;
+  margin-bottom: 16px;
+`
+
+const DiscoveryMessage = styled.div<{ $error?: boolean }>`
+  color: ${({ theme, $error }) => $error ? theme.colors.danger : theme.colors.muted};
+  font-size: 14px;
+  margin-bottom: 14px;
+`
+
+const DiscoveryMissing = styled.details`
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: 14px;
+  margin-top: 16px;
+
+  summary {
+    cursor: pointer;
+    color: ${({ theme }) => theme.colors.text};
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+`
+
+const MissingList = styled.ul`
+  margin: 0;
+  padding-left: 18px;
+`
+
 const pluginItemToTrack = (pluginID: string, item: PluginRowItem): Music => ({
   id: `plugin:${pluginID}:${item.id}`,
   title: item.title,
@@ -309,6 +418,11 @@ export const Home: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
   const [pluginRows, setPluginRows] = useState<PluginHomeRow[]>([])
   const [pluginError, setPluginError] = useState<string | null>(null)
+  const [listenBrainzUser, setListenBrainzUser] = useState('')
+  const [discoveryPreview, setDiscoveryPreview] = useState<DiscoveryPreview | null>(null)
+  const [discoveryLoading, setDiscoveryLoading] = useState(false)
+  const [discoveryMessage, setDiscoveryMessage] = useState<string | null>(null)
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null)
   const [trackLimit, setTrackLimit] = useState(10) // Default to desktop
 
   // Update track limit based on screen size
@@ -377,11 +491,100 @@ export const Home: React.FC = () => {
     }
   }, [isAuthenticated])
 
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setListenBrainzUser('')
+      setDiscoveryPreview(null)
+      return
+    }
+
+    let active = true
+    void discoveryAPI.getSettings()
+      .then(settings => {
+        if (active) {
+          setListenBrainzUser(settings.listenbrainz_user || '')
+        }
+      })
+      .catch(err => {
+        console.error('Failed to load discovery settings:', err)
+        if (active) {
+          setDiscoveryError('Discovery settings could not be loaded')
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [isAuthenticated])
+
   const handlePlayTrack = async (track: Music) => {
     try {
       await playTrack(track)
     } catch (err) {
       console.error('Failed to play track:', err)
+    }
+  }
+
+  const discoveryErrorMessage = (err: unknown, fallback: string) => {
+    if (err && typeof err === 'object' && 'response' in err) {
+      const response = (err as { response?: { data?: { error?: string; message?: string } } }).response
+      return response?.data?.error || response?.data?.message || fallback
+    }
+    if (err instanceof Error) return err.message
+    return fallback
+  }
+
+  const handleSaveDiscoverySettings = async () => {
+    try {
+      setDiscoveryLoading(true)
+      setDiscoveryError(null)
+      setDiscoveryMessage(null)
+      const saved = await discoveryAPI.saveSettings({ listenbrainz_user: listenBrainzUser.trim() })
+      setListenBrainzUser(saved.listenbrainz_user)
+      setDiscoveryPreview(null)
+      setDiscoveryMessage('ListenBrainz username saved. Use Preview matches to check recommendations.')
+    } catch (err) {
+      console.error('Failed to save discovery settings:', err)
+      setDiscoveryError(discoveryErrorMessage(err, 'Could not save ListenBrainz username'))
+    } finally {
+      setDiscoveryLoading(false)
+    }
+  }
+
+  const handlePreviewDiscovery = async () => {
+    try {
+      setDiscoveryLoading(true)
+      setDiscoveryError(null)
+      setDiscoveryMessage(null)
+      if (!listenBrainzUser.trim()) {
+        await discoveryAPI.saveSettings({ listenbrainz_user: '' })
+        setDiscoveryError('Enter a ListenBrainz username first')
+        return
+      }
+      await discoveryAPI.saveSettings({ listenbrainz_user: listenBrainzUser.trim() })
+      const preview = await discoveryAPI.preview('weekly-exploration')
+      setDiscoveryPreview(preview)
+      setDiscoveryMessage(`Matched ${preview.matched.length} of ${preview.total} ListenBrainz recommendations in your library`)
+    } catch (err) {
+      console.error('Failed to preview discovery playlist:', err)
+      setDiscoveryError(discoveryErrorMessage(err, 'Could not load ListenBrainz recommendations'))
+    } finally {
+      setDiscoveryLoading(false)
+    }
+  }
+
+  const handleCreateDiscoveryPlaylist = async () => {
+    try {
+      setDiscoveryLoading(true)
+      setDiscoveryError(null)
+      setDiscoveryMessage(null)
+      const result = await discoveryAPI.importPlaylist('weekly-exploration')
+      setDiscoveryPreview(result.preview)
+      setDiscoveryMessage(`Created playlist "${result.playlist.name}" with ${result.playlist.track_ids.length} tracks`)
+    } catch (err) {
+      console.error('Failed to create discovery playlist:', err)
+      setDiscoveryError(discoveryErrorMessage(err, 'Could not create discovery playlist'))
+    } finally {
+      setDiscoveryLoading(false)
     }
   }
 
@@ -501,15 +704,82 @@ export const Home: React.FC = () => {
 
       <Section>
         <SectionTitle>Made for you</SectionTitle>
-        <TrackGrid>
-          <EmptyState>
-            <EmptyStateIcon>
-              <MusicIcon size={48} />
-            </EmptyStateIcon>
-            <EmptyStateText>No personalized playlists available</EmptyStateText>
-            <EmptyStateSubtext>Listen to more music to get personalized recommendations</EmptyStateSubtext>
-          </EmptyState>
-        </TrackGrid>
+        <DiscoveryPanel>
+          <DiscoveryControls>
+            <DiscoveryInput
+              value={listenBrainzUser}
+              onChange={(event) => setListenBrainzUser(event.target.value)}
+              placeholder="ListenBrainz username, for example your ListenBrainz profile name"
+              aria-label="ListenBrainz username"
+            />
+            <DiscoveryButton type="button" onClick={handleSaveDiscoverySettings} disabled={discoveryLoading}>
+              Save username
+            </DiscoveryButton>
+            <DiscoveryButton type="button" $primary onClick={handlePreviewDiscovery} disabled={discoveryLoading}>
+              Preview matches
+            </DiscoveryButton>
+            <DiscoveryButton
+              type="button"
+              onClick={handleCreateDiscoveryPlaylist}
+              disabled={discoveryLoading || !discoveryPreview || discoveryPreview.matched.length === 0}
+            >
+              Create playlist
+            </DiscoveryButton>
+          </DiscoveryControls>
+          {discoveryError && <DiscoveryMessage $error>{discoveryError}</DiscoveryMessage>}
+          {discoveryMessage && <DiscoveryMessage>{discoveryMessage}</DiscoveryMessage>}
+          {discoveryPreview ? (
+            <>
+              <DiscoveryStats>
+                <span>{discoveryPreview.total} recommendations</span>
+                <span>{discoveryPreview.matched.length} matched locally</span>
+                <span>{discoveryPreview.missing.length} missing from library</span>
+              </DiscoveryStats>
+              <TrackGrid>
+                {discoveryPreview.matched.slice(0, 8).map((track) => {
+                  const artworkUrl = getTrackArtworkUrl(track)
+                  return (
+                    <TrackCard key={track.id} onClick={() => handlePlayTrack(track)}>
+                      <TrackCoverArt
+                        $imageUrl={artworkUrl}
+                        $fallback={getArtworkGradient(`${track.album}|${track.artist}`)}
+                      >
+                        {artworkUrl ? null : <MusicIcon size={24} />}
+                        <PlayButton className="play-button">
+                          <Play size={16} />
+                        </PlayButton>
+                      </TrackCoverArt>
+                      <TrackInfo>
+                        <TrackName>{track.title}</TrackName>
+                        <TrackArtist>{track.artist}</TrackArtist>
+                        <TrackAlbum>{track.album}</TrackAlbum>
+                      </TrackInfo>
+                      <TrackActionsMenu track={track} />
+                    </TrackCard>
+                  )
+                })}
+              </TrackGrid>
+              {discoveryPreview.missing.length > 0 && (
+                <DiscoveryMissing>
+                  <summary>Missing recommendations</summary>
+                  <MissingList>
+                    {discoveryPreview.missing.slice(0, 12).map((track) => (
+                      <li key={`${track.artist}-${track.title}`}>{track.artist} - {track.title}</li>
+                    ))}
+                  </MissingList>
+                </DiscoveryMissing>
+              )}
+            </>
+          ) : (
+            <EmptyState>
+              <EmptyStateIcon>
+                <MusicIcon size={48} />
+              </EmptyStateIcon>
+              <EmptyStateText>Import recommendations from ListenBrainz</EmptyStateText>
+              <EmptyStateSubtext>WaveNode will only add tracks that already exist in your library</EmptyStateSubtext>
+            </EmptyState>
+          )}
+        </DiscoveryPanel>
       </Section>
     </HomeContainer>
   )
