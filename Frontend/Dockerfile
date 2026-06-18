@@ -7,7 +7,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="WaveNode Web" \
       org.opencontainers.image.version="${VERSION}" \
