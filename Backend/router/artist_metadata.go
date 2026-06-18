@@ -51,10 +51,14 @@ func (r *Router) lookupArtistMetadata(w http.ResponseWriter, req *http.Request) 
 }
 
 func (r *Router) getArtistImage(w http.ResponseWriter, req *http.Request) {
-	artist, err := r.db.GetArtistByHash(mux.Vars(req)["id"])
+	artistID := mux.Vars(req)["id"]
+	artist, err := r.db.GetArtistByHash(artistID)
 	if err != nil {
-		writeJSONError(w, http.StatusNotFound, err.Error())
-		return
+		artist, err = r.db.GetLibraryArtistByID(artistID)
+		if err != nil {
+			writeJSONError(w, http.StatusNotFound, err.Error())
+			return
+		}
 	}
 	image, err := r.db.GetPrimaryArtistImage(artist.ID)
 	if err != nil {

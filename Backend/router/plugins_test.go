@@ -34,6 +34,32 @@ func TestValidatePluginManifestAcceptsRadioRow(t *testing.T) {
 	}
 }
 
+func TestValidatePluginManifestAcceptsDownloadTrackAction(t *testing.T) {
+	raw := []byte(`{
+		"schema_version": 1,
+		"id": "mobile.downloads",
+		"name": "Mobile Downloads",
+		"version": "1.0.0",
+		"permissions": ["download"],
+		"contributes": {
+			"track_actions": [{
+				"id": "download-to-device",
+				"label": "Download to Device",
+				"icon": "download",
+				"action_type": "download",
+				"url": "/api/music/{id}/download"
+			}]
+		}
+	}`)
+	manifest, err := validatePluginManifest(raw)
+	if err != nil {
+		t.Fatalf("validate manifest: %v", err)
+	}
+	if manifest.ID != "mobile.downloads" || len(manifest.Contributes.TrackActions) != 1 {
+		t.Fatalf("unexpected manifest: %#v", manifest)
+	}
+}
+
 func TestValidatePluginManifestRejectsUnsafeAndUnknownFields(t *testing.T) {
 	tests := map[string]string{
 		"javascript stream": `{
@@ -52,6 +78,14 @@ func TestValidatePluginManifestRejectsUnsafeAndUnknownFields(t *testing.T) {
 			"permissions":["network","playback"],
 			"contributes":{"home_rows":[{"id":"bad-row","title":"Bad","type":"radio",
 			"items":[{"id":"bad-item","title":"Bad","stream_url":"https://example.test/live"}]}]}
+		}`,
+		"download action without permission": `{
+			"schema_version":1,"id":"bad.downloads","name":"Bad","version":"1",
+			"contributes":{"track_actions":[{"id":"download","label":"Download","action_type":"download","url":"/api/music/{id}/download"}]}
+		}`,
+		"download action unsafe URL": `{
+			"schema_version":1,"id":"bad.downloads","name":"Bad","version":"1","permissions":["download"],
+			"contributes":{"track_actions":[{"id":"download","label":"Download","action_type":"download","url":"https://example.test/{id}"}]}
 		}`,
 	}
 	for name, raw := range tests {

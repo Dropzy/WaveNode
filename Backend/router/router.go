@@ -138,6 +138,7 @@ func (r *Router) SetupRoutes() *mux.Router {
 	protected.HandleFunc("/music/search/comprehensive", r.musicHandler.ComprehensiveSearch).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/music/{id}", r.musicHandler.GetMusic).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/music/{id}/stream", r.musicHandler.StreamMusic).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/music/{id}/download", r.musicHandler.DownloadMusic).Methods("GET", "OPTIONS")
 	// Artwork serving route (public - no auth required)
 	public.HandleFunc("/artwork/{filename}", r.serveArtwork).Methods("GET", "OPTIONS")
 
@@ -174,6 +175,7 @@ func (r *Router) SetupRoutes() *mux.Router {
 	protected.HandleFunc("/history", r.clearListeningHistory).Methods("DELETE", "OPTIONS")
 	protected.HandleFunc("/plugins/home-rows", r.getPluginHomeRows).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/plugins/radio-metadata", r.getPluginRadioMetadata).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/plugins/track-actions", r.getPluginTrackActions).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/discovery/settings", r.getDiscoverySettings).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/discovery/settings", r.updateDiscoverySettings).Methods("PUT", "OPTIONS")
 	protected.HandleFunc("/discovery/preview", r.previewDiscovery).Methods("GET", "OPTIONS")
@@ -351,14 +353,17 @@ func (r *Router) getArtistByID(w http.ResponseWriter, req *http.Request) {
 
 	artist, err := r.db.GetArtistByHash(artistID)
 	if err != nil {
-		response := map[string]interface{}{
-			"success": false,
-			"error":   err.Error(),
+		artist, err = r.db.GetLibraryArtistByID(artistID)
+		if err != nil {
+			response := map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(response)
+			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(response)
-		return
 	}
 
 	response := map[string]interface{}{
@@ -398,14 +403,17 @@ func (r *Router) getArtistTracksByID(w http.ResponseWriter, req *http.Request) {
 
 		artist, err = r.db.GetArtistByName(decodedArtistName)
 		if err != nil {
-			response := map[string]interface{}{
-				"success": false,
-				"error":   "Artist not found",
+			artist, err = r.db.GetLibraryArtistByID(artistID)
+			if err != nil {
+				response := map[string]interface{}{
+					"success": false,
+					"error":   "Artist not found",
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				json.NewEncoder(w).Encode(response)
+				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(response)
-			return
 		}
 	}
 

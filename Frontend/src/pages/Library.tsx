@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import styled from 'styled-components'
 import { useNavigate } from 'react-router-dom'
 import { Play, Disc, Plus, ListMusic, Edit, Trash2, User, Music2, MoreVertical, Download, PlusCircle, Heart, X, Search, ArrowUpDown, Check, List, Rows3, Sparkles, Upload } from 'lucide-react'
-import { albumAPI, musicAPI, playlistAPI, artistAPI, likedTracksAPI } from '../services/api'
+import { albumAPI, musicAPI, playlistAPI, artistAPI, likedTracksAPI, pluginsAPI, type PluginTrackAction } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useAudio } from '../contexts/AudioContext'
 import { getAlbumArtworkUrl, getArtworkGradient, getTrackArtworkUrl } from '../utils/mediaUrl'
@@ -57,6 +57,17 @@ interface Album {
 
 type Music = Track
 
+interface Artist {
+  id?: string;
+  name?: string;
+  image_medium_url?: string;
+  image_url?: string;
+  image_small_url?: string;
+  image_large_url?: string;
+  track_count?: number;
+  album_count?: number;
+}
+
 type TrackSort =
   | 'uploaded-desc'
   | 'title-asc'
@@ -65,6 +76,82 @@ type TrackSort =
   | 'duration-asc'
 
 type TrackView = 'compact' | 'list'
+type LibraryTab = 'playlists' | 'albums' | 'artists' | 'tracks' | 'downloads'
+
+const libraryTabStorageKey = 'wavenode.library.activeTab'
+const libraryDataStorageKey = 'wavenode.library.cache'
+const libraryTabs: LibraryTab[] = ['playlists', 'albums', 'artists', 'tracks', 'downloads']
+
+type CachedLibraryData = {
+  music: Music[]
+  playlists: Playlist[]
+  albums: Album[]
+  artists: Artist[]
+  cachedAt: number
+}
+
+const getStoredLibraryTab = (): LibraryTab => {
+  if (typeof window === 'undefined') {
+    return 'playlists'
+  }
+
+  const storedTab = window.localStorage.getItem(libraryTabStorageKey)
+  return libraryTabs.includes(storedTab as LibraryTab) ? storedTab as LibraryTab : 'playlists'
+}
+
+const readCachedLibraryData = (): CachedLibraryData | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const rawCache = window.localStorage.getItem(libraryDataStorageKey)
+    if (!rawCache) {
+      return null
+    }
+    const parsed = JSON.parse(rawCache) as Partial<CachedLibraryData>
+    if (!Array.isArray(parsed.music) || !Array.isArray(parsed.playlists) || !Array.isArray(parsed.albums) || !Array.isArray(parsed.artists)) {
+      return null
+    }
+    return {
+      music: parsed.music,
+      playlists: parsed.playlists,
+      albums: parsed.albums,
+      artists: parsed.artists,
+      cachedAt: typeof parsed.cachedAt === 'number' ? parsed.cachedAt : 0,
+    }
+  } catch {
+    return null
+  }
+}
+
+const writeCachedLibraryData = (cache: Omit<CachedLibraryData, 'cachedAt'>) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(libraryDataStorageKey, JSON.stringify({
+      ...cache,
+      cachedAt: Date.now(),
+    }))
+  } catch (error) {
+    console.warn('Library cache could not be saved:', error)
+  }
+}
+
+const fallbackDownloadFilename = (track: Track) => {
+  const filePathName = track.file_path?.split(/[\\/]/).pop()
+  return filePathName || `${track.artist} - ${track.title}`
+}
+
+const downloadLibraryTrack = async (track: Track, action: PluginTrackAction) => {
+  if (action.action_type !== 'download') {
+    return
+  }
+
+  await musicAPI.downloadMusic(track.id, fallbackDownloadFilename(track))
+}
 
 const LibraryContainer = styled.div`
   padding: 28px clamp(16px, 2vw, 32px) 40px;
@@ -1174,9 +1261,10 @@ export const Library: React.FC = () => {
   const { isAuthenticated, token } = useAuth()
   const { playFromQueue, playPlaylist, addToQueue } = useAudio()
   const navigate = useNavigate()
-  const [music, setMusic] = useState<Music[]>([])
-  const [playlists, setPlaylists] = useState<Playlist[]>([])
-  const [albums, setAlbums] = useState<Album[]>([])
+  const cachedLibraryData = useMemo(() => readCachedLibraryData(), [])
+  const [music, setMusic] = useState<Music[]>(() => cachedLibraryData?.music || [])
+  const [playlists, setPlaylists] = useState<Playlist[]>(() => cachedLibraryData?.playlists || [])
+  const [albums, setAlbums] = useState<Album[]>(() => cachedLibraryData?.albums || [])
 
   useEffect(() => {
     const refreshPlaylists = () => {
@@ -1188,26 +1276,15 @@ export const Library: React.FC = () => {
     return () => window.removeEventListener(playlistsChangedEvent, refreshPlaylists)
   }, [])
   
-  // Define artist interface for better type safety
-  interface Artist {
-    id?: string;
-    name?: string;
-    image_medium_url?: string;
-    image_url?: string;
-    image_small_url?: string;
-    image_large_url?: string;
-    track_count?: number;
-    album_count?: number;
-  }
-
-  const [artists, setArtists] = useState<Artist[]>([])
-  const [loading, setLoading] = useState(true)
+  const [artists, setArtists] = useState<Artist[]>(() => cachedLibraryData?.artists || [])
+  const [loading, setLoading] = useState(!cachedLibraryData)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [activeTab, setActiveTab] = useState<'playlists' | 'albums' | 'artists' | 'tracks' | 'downloads'>('playlists')
+  const [activeTab, setActiveTab] = useState<LibraryTab>(getStoredLibraryTab)
   const [trackSort, setTrackSort] = useState<TrackSort>('uploaded-desc')
   const [trackView, setTrackView] = useState<TrackView>('list')
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
+  const [pluginTrackActions, setPluginTrackActions] = useState<PluginTrackAction[]>([])
   const sortMenuRef = useRef<HTMLDivElement | null>(null)
   
   // Context menu state
@@ -1252,32 +1329,37 @@ export const Library: React.FC = () => {
     const sectionNames = ['tracks', 'playlists', 'albums', 'artists']
     const failedSections: string[] = []
 
-    if (results[0].status === 'fulfilled') {
-      setMusic(results[0].value)
+    const nextMusic = results[0].status === 'fulfilled' ? results[0].value : null
+    const nextPlaylists = results[1].status === 'fulfilled' ? results[1].value : null
+    const nextAlbums = results[2].status === 'fulfilled' ? results[2].value : null
+    const nextArtists = results[3].status === 'fulfilled' ? results[3].value : null
+
+    if (nextMusic) {
+      setMusic(nextMusic)
     } else {
       failedSections.push(sectionNames[0])
-      console.error('Error loading tracks:', results[0].reason)
+      console.error('Error loading tracks:', results[0].status === 'rejected' ? results[0].reason : 'No data returned')
     }
 
-    if (results[1].status === 'fulfilled') {
-      setPlaylists(results[1].value)
+    if (nextPlaylists) {
+      setPlaylists(nextPlaylists)
     } else {
       failedSections.push(sectionNames[1])
-      console.error('Error loading playlists:', results[1].reason)
+      console.error('Error loading playlists:', results[1].status === 'rejected' ? results[1].reason : 'No data returned')
     }
 
-    if (results[2].status === 'fulfilled') {
-      setAlbums(results[2].value)
+    if (nextAlbums) {
+      setAlbums(nextAlbums)
     } else {
       failedSections.push(sectionNames[2])
-      console.error('Error loading albums:', results[2].reason)
+      console.error('Error loading albums:', results[2].status === 'rejected' ? results[2].reason : 'No data returned')
     }
 
-    if (results[3].status === 'fulfilled') {
-      setArtists(results[3].value)
+    if (nextArtists) {
+      setArtists(nextArtists)
     } else {
       failedSections.push(sectionNames[3])
-      console.error('Error loading artists:', results[3].reason)
+      console.error('Error loading artists:', results[3].status === 'rejected' ? results[3].reason : 'No data returned')
     }
 
     if (failedSections.length === results.length) {
@@ -1286,6 +1368,15 @@ export const Library: React.FC = () => {
 
     if (failedSections.length > 0) {
       console.warn(`Some library sections could not be loaded: ${failedSections.join(', ')}`)
+    }
+
+    if (nextMusic && nextPlaylists && nextAlbums && nextArtists) {
+      writeCachedLibraryData({
+        music: nextMusic,
+        playlists: nextPlaylists,
+        albums: nextAlbums,
+        artists: nextArtists,
+      })
     }
     setError(null)
   }, [])
@@ -1317,7 +1408,9 @@ export const Library: React.FC = () => {
       }
 
       try {
-        setLoading(true)
+        if (!cachedLibraryData) {
+          setLoading(true)
+        }
         await loadLibraryData()
       } catch (err) {
         setError('Failed to load library data')
@@ -1328,7 +1421,27 @@ export const Library: React.FC = () => {
     }
 
     fetchData()
-  }, [isAuthenticated, loadLibraryData, token])
+  }, [cachedLibraryData, isAuthenticated, loadLibraryData, token])
+
+  useEffect(() => {
+    if (!isAuthenticated || !token) {
+      setPluginTrackActions([])
+      return
+    }
+
+    let isCurrent = true
+    pluginsAPI.getTrackActions()
+      .then(actions => {
+        if (isCurrent) {
+          setPluginTrackActions(actions)
+        }
+      })
+      .catch(error => console.error('Failed to load plugin track actions:', error))
+
+    return () => {
+      isCurrent = false
+    }
+  }, [isAuthenticated, token])
 
   useEffect(() => {
     const handleClickOutside = () => {
@@ -1518,6 +1631,17 @@ export const Library: React.FC = () => {
     const tracks = trackSelection.selectedIds.has(track.id) ? trackSelection.selectedTracks : [track]
     tracks.forEach(addToQueue)
     setContextMenu({ visible: false, x: 0, y: 0, track: null })
+  }
+
+  const handlePluginTrackAction = (action: PluginTrackAction, track: Track) => {
+    const tracks = trackSelection.selectedIds.has(track.id) ? trackSelection.selectedTracks : [track]
+    setContextMenu({ visible: false, x: 0, y: 0, track: null })
+
+    if (action.action_type === 'download') {
+      void Promise.all(tracks.map(selectedTrack => downloadLibraryTrack(selectedTrack, action))).catch(error => {
+        console.error('Failed to download selected tracks:', error)
+      })
+    }
   }
 
   const handleGoToArtist = (track: Track) => {
@@ -2114,14 +2238,21 @@ export const Library: React.FC = () => {
                   image_url?: string;
                   image_small_url?: string;
                   image_large_url?: string;
+                  track_count?: number;
+                  album_count?: number;
                 }
                 artistName = enrichedArtist.name || enrichedArtist.id || 'Unknown Artist'
-                // Get track and album counts from music data for enriched artists too
+                imageUrl = enrichedArtist.image_medium_url
+                  || enrichedArtist.image_large_url
+                  || enrichedArtist.image_url
+                  || enrichedArtist.image_small_url
+
+                // Prefer backend counts because they include split and featured artists.
                 const artistTracks = music.filter(track => track.artist === artistName)
-                imageUrl = artistTracks.map(getTrackArtworkUrl).find(Boolean)
-                trackCount = artistTracks.length
+                imageUrl = imageUrl || artistTracks.map(getTrackArtworkUrl).find(Boolean)
+                trackCount = enrichedArtist.track_count ?? artistTracks.length
                 const uniqueAlbums = new Set(artistTracks.map(track => track.album))
-                albumCount = uniqueAlbums.size
+                albumCount = enrichedArtist.album_count ?? uniqueAlbums.size
               }
               
               return (
@@ -2375,7 +2506,7 @@ export const Library: React.FC = () => {
     )
   }
 
-  const tabs = [
+  const tabs: Array<{ id: LibraryTab; label: string; icon: typeof ListMusic }> = [
     { id: 'playlists', label: 'Playlists', icon: ListMusic },
     { id: 'albums', label: 'Albums', icon: Disc },
     { id: 'artists', label: 'Artists', icon: User },
@@ -2416,7 +2547,10 @@ export const Library: React.FC = () => {
               <TabButton
                 key={tab.id}
                 $active={activeTab === tab.id}
-                onClick={() => setActiveTab(tab.id as typeof activeTab)}
+                onClick={() => {
+                  setActiveTab(tab.id)
+                  window.localStorage.setItem(libraryTabStorageKey, tab.id)
+                }}
               >
                 <Icon size={18} />
                 {tab.label}
@@ -2460,6 +2594,20 @@ export const Library: React.FC = () => {
                 ? `Add ${trackSelection.selectedTracks.length} to Playlist`
                 : 'Add to Playlist'}
             </ContextMenuItem>
+            {pluginTrackActions.map(action => {
+              const selectedCount = trackSelection.selectedIds.has(contextMenu.track!.id)
+                ? trackSelection.selectedTracks.length
+                : 1
+              return (
+                <ContextMenuItem
+                  key={`${action.plugin_id}:${action.id}`}
+                  onClick={() => handlePluginTrackAction(action, contextMenu.track!)}
+                >
+                  <Download size={16} />
+                  {selectedCount > 1 ? `${action.label} (${selectedCount})` : action.label}
+                </ContextMenuItem>
+              )
+            })}
             <ContextMenuItem onClick={() => handleGoToArtist(contextMenu.track!)}>
               <User size={16} />
               Go to Artist

@@ -1130,38 +1130,20 @@ const scanResultText = (scan: ScanStatus) => {
   return `${scan.songs_added || 0} added · ${scan.songs_updated || 0} updated`
 }
 
-const radioPluginTemplate = JSON.stringify({
+const downloadPluginTemplate = JSON.stringify({
   schema_version: 1,
-  id: 'community.radio',
-  name: 'Community Radio',
+  id: 'mobile.downloads',
+  name: 'Mobile Downloads',
   version: '1.0.0',
-  description: 'Adds curated internet radio stations to the WaveNode home page.',
-  homepage: 'https://somafm.com',
-  permissions: ['network', 'playback'],
+  description: 'Adds a Download to Device action to track menus.',
+  permissions: ['download'],
   contributes: {
-    home_rows: [{
-      id: 'radio-stations',
-      title: 'Radio stations',
-      subtitle: 'Live stations provided by the Community Radio plugin',
-      type: 'radio',
-      items: [
-        {
-          id: 'groove-salad',
-          title: 'Groove Salad',
-          subtitle: 'Ambient and downtempo',
-          stream_url: 'https://ice1.somafm.com/groovesalad-128-mp3',
-          homepage_url: 'https://somafm.com/groovesalad/',
-          image_url: 'https://somafm.com/img3/groovesalad-400.jpg',
-        },
-        {
-          id: 'drone-zone',
-          title: 'Drone Zone',
-          subtitle: 'Atmospheric ambient space music',
-          stream_url: 'https://ice1.somafm.com/dronezone-128-mp3',
-          homepage_url: 'https://somafm.com/dronezone/',
-          image_url: 'https://somafm.com/img3/dronezone-400.jpg',
-        },
-      ],
+    track_actions: [{
+      id: 'download-to-device',
+      label: 'Download to Device',
+      icon: 'download',
+      action_type: 'download',
+      url: '/api/music/{id}/download',
     }],
   },
 }, null, 2)
@@ -1224,7 +1206,7 @@ const AdminDashboard: React.FC = () => {
   const [diagnostics, setDiagnostics] = useState<LibraryDiagnostics | null>(null)
   const [plugins, setPlugins] = useState<PluginRecord[]>([])
   const [showPluginForm, setShowPluginForm] = useState(false)
-  const [pluginManifest, setPluginManifest] = useState(radioPluginTemplate)
+  const [pluginManifest, setPluginManifest] = useState(downloadPluginTemplate)
   const [pluginAction, setPluginAction] = useState<string | null>(null)
   const [lastFMIntegration, setLastFMIntegration] = useState<LastFMIntegrationSettings>({
     api_key: '',
@@ -2362,7 +2344,7 @@ const AdminDashboard: React.FC = () => {
               <div>
                 <PrimaryText>Plugin manifest</PrimaryText>
                 <SecondaryText>
-                  Paste a schema version 1 manifest. This starter adds a radio row and can be edited before installation.
+                  Paste a schema version 1 manifest. This starter adds a track download action and can be edited before installation.
                 </SecondaryText>
               </div>
               <textarea
@@ -2375,8 +2357,8 @@ const AdminDashboard: React.FC = () => {
                 <Button $variant="primary" type="submit" disabled={pluginAction !== null}>
                   <PackagePlus size={15} /> {pluginAction === 'install' ? 'Installing...' : 'Validate and install'}
                 </Button>
-                <Button type="button" onClick={() => setPluginManifest(radioPluginTemplate)}>
-                  Restore radio example
+                <Button type="button" onClick={() => setPluginManifest(downloadPluginTemplate)}>
+                  Restore download example
                 </Button>
                 <Button type="button" onClick={() => setShowPluginForm(false)}>Cancel</Button>
               </ButtonRow>
@@ -2432,7 +2414,7 @@ const AdminDashboard: React.FC = () => {
             ) : (
               <EmptyState>
                 <EmptyIcon><Plug size={34} /></EmptyIcon>
-                No plugins installed. Use the included radio example to add the first home-page row.
+                No plugins installed. Use the included download example to add the first track menu action.
               </EmptyState>
             )}
           </PanelBody>

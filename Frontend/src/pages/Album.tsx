@@ -145,10 +145,10 @@ const AlbumActions = styled.div`
 `
 
 const PlayButton = styled.button`
-  background-color: #1db954;
+  background-color: ${({ theme }) => theme.colors.accent};
   border: none;
   border-radius: 500px;
-  color: #fff;
+  color: ${({ theme }) => theme.colors.accentText};
   padding: 12px 32px;
   font-size: 14px;
   font-weight: 700;
@@ -159,7 +159,7 @@ const PlayButton = styled.button`
   transition: all 0.2s ease;
 
   &:hover {
-    background-color: #1ed760;
+    background-color: ${({ theme }) => theme.colors.accentHover};
     transform: scale(1.05);
   }
   
@@ -184,8 +184,8 @@ const ShuffleButton = styled.button`
   transition: all 0.2s ease;
 
   &:hover {
-    border-color: #1db954;
-    color: #1db954;
+    border-color: ${({ theme }) => theme.colors.accent};
+    color: ${({ theme }) => theme.colors.accent};
     transform: scale(1.05);
   }
   
@@ -284,13 +284,13 @@ const TrackPlayIcon = styled.div<{ $visible?: boolean }>`
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: #1db954;
+  color: ${({ theme }) => theme.colors.accent};
   opacity: ${props => props.$visible ? 1 : 0};
   transition: opacity 0.2s ease;
   cursor: pointer;
   
   &:hover {
-    color: #1ed760;
+    color: ${({ theme }) => theme.colors.accentHover};
   }
 `
 
@@ -411,7 +411,7 @@ const SimilarAlbumYear = styled.div`
 `
 
 const SimilarAlbumTracks = styled.div`
-  color: #1db954;
+  color: ${({ theme }) => theme.colors.accent};
   font-size: 11px;
   margin-top: 4px;
 `

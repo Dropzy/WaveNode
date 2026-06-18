@@ -88,6 +88,15 @@ export interface PluginRadioMetadata {
   error?: string
 }
 
+export interface PluginTrackAction {
+  plugin_id: string
+  id: string
+  label: string
+  icon?: string
+  action_type: 'download'
+  url: string
+}
+
 export interface DiscoverySettings {
   listenbrainz_user: string
 }
@@ -246,6 +255,8 @@ export interface ArtistInfo {
 export interface Artist {
   id: string
   name: string
+  track_count?: number
+  album_count?: number
   spotify_id: string
   spotify_url: string
   image_url: string
@@ -378,6 +389,11 @@ export const pluginsAPI = {
     })
     return response.data.data || null
   },
+
+  getTrackActions: async (): Promise<PluginTrackAction[]> => {
+    const response = await api.get<APIResponse<PluginTrackAction[]>>('/plugins/track-actions')
+    return response.data.data || []
+  },
 }
 
 export const discoveryAPI = {
@@ -416,6 +432,28 @@ export const musicAPI = {
   getAllMusic: async (): Promise<Music[]> => {
     const response = await api.get<APIResponse<Music[]>>('/music')
     return response.data.data || []
+  },
+
+  downloadMusic: async (id: string, fallbackFilename = 'track'): Promise<void> => {
+    const response = await api.get<Blob>(`/music/${id}/download`, {
+      responseType: 'blob',
+    })
+    const contentDispositionHeader = response.headers['content-disposition']
+    const contentDisposition = typeof contentDispositionHeader === 'string' ? contentDispositionHeader : ''
+    const filenameMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^"]+)"?/i)
+    const filename = decodeURIComponent(filenameMatch?.[1] || filenameMatch?.[2] || fallbackFilename)
+    const contentTypeHeader = response.headers['content-type']
+    const blob = new Blob([response.data], {
+      type: typeof contentTypeHeader === 'string' ? contentTypeHeader : 'application/octet-stream',
+    })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
   },
 
   getMusic: async (id: string): Promise<Music | null> => {

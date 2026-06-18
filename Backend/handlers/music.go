@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -459,6 +460,48 @@ func (h *MusicHandler) StreamMusic(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", streaming.SourceContentType(music.Format, filePath))
 	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("Cache-Control", "private, no-cache")
+	http.ServeContent(w, r, fileInfo.Name(), fileInfo.ModTime(), file)
+}
+
+// DownloadMusic sends the original source file as an attachment.
+func (h *MusicHandler) DownloadMusic(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	music, err := h.db.GetMusic(id)
+	if err != nil {
+		response := auth.APIResponse{Success: false, Error: "Music not found"}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	if music.FilePath == "" {
+		http.Error(w, "Track has no source file", http.StatusGone)
+		return
+	}
+
+	file, err := os.Open(music.FilePath)
+	if err != nil {
+		http.Error(w, "Track source file cannot be opened", http.StatusGone)
+		return
+	}
+	defer file.Close()
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		http.Error(w, "Track source file cannot be read", http.StatusInternalServerError)
+		return
+	}
+
+	filename := music.FileName
+	if strings.TrimSpace(filename) == "" {
+		filename = filepath.Base(music.FilePath)
+	}
+	w.Header().Set("Content-Type", streaming.SourceContentType(music.Format, music.FilePath))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 	w.Header().Set("Cache-Control", "private, no-cache")
 	http.ServeContent(w, r, fileInfo.Name(), fileInfo.ModTime(), file)
 }

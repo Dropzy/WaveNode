@@ -38,7 +38,11 @@ func (db *DB) RepairMissingArtistLinks() (int64, error) {
 
 	var repaired int64
 	for _, name := range names {
-		artist, err := db.ArtistOrStoreArtist(name)
+		primaryArtistName := PrimaryArtistName(name)
+		if primaryArtistName == "" {
+			continue
+		}
+		artist, err := db.ArtistOrStoreArtist(primaryArtistName)
 		if err != nil {
 			return repaired, err
 		}

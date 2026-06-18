@@ -25,16 +25,47 @@ import { setupAPI, SetupStatus } from './services/api';
 import { Loader2 } from 'lucide-react';
 import styled from 'styled-components';
 
+const setupStatusStorageKey = 'wavenode.setup.status'
+
+const readCachedSetupStatus = (): SetupStatus | null => {
+  try {
+    const rawStatus = window.localStorage.getItem(setupStatusStorageKey)
+    if (!rawStatus) return null
+    const status = JSON.parse(rawStatus) as Partial<SetupStatus>
+    if (typeof status.required !== 'boolean') return null
+    return {
+      required: status.required,
+      token_required: Boolean(status.token_required),
+      default_artwork_path: status.default_artwork_path || '',
+      registration_enabled: Boolean(status.registration_enabled),
+    }
+  } catch {
+    return null
+  }
+}
+
+const writeCachedSetupStatus = (status: SetupStatus) => {
+  try {
+    window.localStorage.setItem(setupStatusStorageKey, JSON.stringify(status))
+  } catch {
+    // Non-critical: startup still works without local storage.
+  }
+}
+
 function SetupAwareApp() {
-  const [status, setStatus] = useState<SetupStatus | null>(null)
+  const [status, setStatus] = useState<SetupStatus | null>(() => readCachedSetupStatus())
   const [error, setError] = useState('')
 
   const loadStatus = async () => {
     setError('')
     try {
-      setStatus(await setupAPI.getStatus())
+      const nextStatus = await setupAPI.getStatus()
+      setStatus(nextStatus)
+      writeCachedSetupStatus(nextStatus)
     } catch {
-      setError('WaveNode could not check whether setup is complete.')
+      if (!status) {
+        setError('WaveNode could not check whether setup is complete.')
+      }
     }
   }
 

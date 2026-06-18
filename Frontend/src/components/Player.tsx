@@ -554,6 +554,7 @@ export const Player: React.FC = () => {
 
   const artworkUrl = getTrackArtworkUrl(currentTrack);
   const isRadioStream = Boolean(currentTrack?.is_external && currentTrack.stream_url);
+  const displayDuration = isRadioStream ? duration : (Number.isFinite(duration) && duration > 0 ? duration : currentTrack?.duration || 0);
   const displayTitle = isRadioStream && radioStreamTitle ? radioStreamTitle : currentTrack?.title;
   const displaySubtitle = isRadioStream && radioStreamTitle
     ? currentTrack?.title
@@ -646,13 +647,13 @@ export const Player: React.FC = () => {
   };
 
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!Number.isFinite(duration) || duration <= 0) {
+    if (!Number.isFinite(displayDuration) || displayDuration <= 0) {
       return;
     }
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const percentage = x / rect.width;
-    const newTime = percentage * duration;
+    const newTime = percentage * displayDuration;
     seekTo(newTime);
   };
 
@@ -714,7 +715,7 @@ export const Player: React.FC = () => {
     }
   };
 
-  const progressPercentage = Number.isFinite(duration) && duration > 0 ? (currentTime / duration) * 100 : 0;
+  const progressPercentage = Number.isFinite(displayDuration) && displayDuration > 0 ? (currentTime / displayDuration) * 100 : 0;
   const volumePercentage = volume * 100;
 
   return (
@@ -783,7 +784,7 @@ export const Player: React.FC = () => {
               <ProgressHandle />
             </ProgressFill>
           </ProgressTrack>
-          <Time>{formatTime(duration)}</Time>
+          <Time>{formatTime(displayDuration)}</Time>
         </ProgressBar>
       </PlayerControls>
 
@@ -870,7 +871,7 @@ export const Player: React.FC = () => {
                 <ProgressHandle />
               </ProgressFill>
             </ProgressTrack>
-            <Time>{formatTime(duration)}</Time>
+            <Time>{formatTime(displayDuration)}</Time>
           </ProgressBar>
         </DesktopPlayerControls>
 

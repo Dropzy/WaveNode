@@ -161,10 +161,10 @@ const Attribution = styled.div`
 `
 
 const PlayButton = styled.button`
-  background-color: #1db954;
+  background-color: ${({ theme }) => theme.colors.accent};
   border: none;
   border-radius: 500px;
-  color: #fff;
+  color: ${({ theme }) => theme.colors.accentText};
   padding: 12px 32px;
   font-size: 14px;
   font-weight: 700;
@@ -175,7 +175,7 @@ const PlayButton = styled.button`
   transition: all 0.2s ease;
 
   &:hover {
-    background-color: #1ed760;
+    background-color: ${({ theme }) => theme.colors.accentHover};
     transform: scale(1.05);
   }
   
@@ -200,8 +200,8 @@ const ShuffleButton = styled.button`
   transition: all 0.2s ease;
 
   &:hover {
-    border-color: #1db954;
-    color: #1db954;
+    border-color: ${({ theme }) => theme.colors.accent};
+    color: ${({ theme }) => theme.colors.accent};
     transform: scale(1.05);
   }
   
@@ -292,13 +292,13 @@ const TrackPlayIcon = styled.div<{ $visible?: boolean }>`
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: #1db954;
+  color: ${({ theme }) => theme.colors.accent};
   opacity: ${props => props.$visible ? 1 : 0};
   transition: opacity 0.2s ease;
   cursor: pointer;
   
   &:hover {
-    color: #1ed760;
+    color: ${({ theme }) => theme.colors.accentHover};
   }
 `
 
@@ -543,6 +543,7 @@ export const Artist: React.FC = () => {
   const artistArtworkUrl = artistImage?.image_url || artistImage?.thumbnail_url || artistData.tracks
     .map(getTrackArtworkUrl)
     .find(Boolean)
+  const hasAlbums = artistData.albums.length > 0
 
   return (
     <ArtistContainer>
@@ -565,10 +566,12 @@ export const Artist: React.FC = () => {
               <StatValue>{artistData.artist.track_count}</StatValue>
               <div>Tracks</div>
             </Stat>
-            <Stat>
-              <StatValue>{artistData.artist.album_count}</StatValue>
-              <div>Albums</div>
-            </Stat>
+            {hasAlbums && (
+              <Stat>
+                <StatValue>{artistData.artist.album_count}</StatValue>
+                <div>Albums</div>
+              </Stat>
+            )}
           </ArtistStats>
           <ArtistActions>
             <PlayButton onClick={handlePlayAll}>
@@ -595,8 +598,35 @@ export const Artist: React.FC = () => {
         </ArtistInfo>
       </Header>
 
+      {hasAlbums && (
+        <Section>
+          <SectionTitle>Albums</SectionTitle>
+          <AlbumGrid>
+            {artistData.albums.map((album) => (
+              <AlbumCard 
+                key={album.id}
+                onClick={() => handleAlbumClick(album.name)}
+              >
+                <AlbumArt
+                  $imageUrl={getAlbumArtworkUrl(album, artistData.tracks)}
+                  $fallback={getArtworkGradient(`${album.name}|${album.artist}`)}
+                >
+                  {!getAlbumArtworkUrl(album, artistData.tracks) && <Music size={48} />}
+                </AlbumArt>
+                <AlbumName>{album.name}</AlbumName>
+                <AlbumYear>
+                  {album.year || artistData.tracks
+                    .filter(track => track.album === album.name)
+                    .map(track => formatDate(track.release_date))[0] || ''}
+                </AlbumYear>
+              </AlbumCard>
+            ))}
+          </AlbumGrid>
+        </Section>
+      )}
+
       <Section>
-        <SectionTitle>Popular Tracks</SectionTitle>
+        <SectionTitle>All Tracks</SectionTitle>
         <TrackList>
           {artistData.tracks.map((track, index) => (
             <TrackItem 
@@ -655,31 +685,6 @@ export const Artist: React.FC = () => {
         position={selectionMenu}
         onClose={() => setSelectionMenu(null)}
       />
-
-      <Section>
-        <SectionTitle>Albums</SectionTitle>
-        <AlbumGrid>
-          {artistData.albums.map((album) => (
-            <AlbumCard 
-              key={album.id}
-              onClick={() => handleAlbumClick(album.name)}
-            >
-              <AlbumArt
-                $imageUrl={getAlbumArtworkUrl(album, artistData.tracks)}
-                $fallback={getArtworkGradient(`${album.name}|${album.artist}`)}
-              >
-                {!getAlbumArtworkUrl(album, artistData.tracks) && <Music size={48} />}
-              </AlbumArt>
-              <AlbumName>{album.name}</AlbumName>
-              <AlbumYear>
-                {album.year || artistData.tracks
-                  .filter(track => track.album === album.name)
-                  .map(track => formatDate(track.release_date))[0] || ''}
-              </AlbumYear>
-            </AlbumCard>
-          ))}
-        </AlbumGrid>
-      </Section>
     </ArtistContainer>
   )
 }
