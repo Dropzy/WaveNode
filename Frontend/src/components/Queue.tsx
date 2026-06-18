@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import styled from 'styled-components';
 import { useAudio } from '../contexts/AudioContext';
 import { Music } from '../services/api';
@@ -23,10 +24,11 @@ const QueueContainer = styled.div<QueueContainerProps>`
   position: fixed;
   right: 0;
   top: 0;
-  bottom: 90px;
+  bottom: 104px;
   width: 400px;
-  background-color: #121212;
-  border-left: 1px solid #282828;
+  background: ${({ theme }) => theme.colors.backgroundElevated};
+  border-left: 1px solid ${({ theme }) => theme.colors.border};
+  box-shadow: -18px 0 55px ${({ theme }) => theme.colors.shadow};
   display: flex;
   flex-direction: column;
   z-index: 1000;
@@ -44,12 +46,12 @@ const QueueHeader = styled.div`
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid #282828;
-  background-color: #181818;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
+  background: ${({ theme }) => theme.colors.surface};
 `;
 
 const QueueTitle = styled.h2`
-  color: #fff;
+  color: ${({ theme }) => theme.colors.text};
   font-size: 18px;
   font-weight: 600;
   margin: 0;
@@ -58,7 +60,7 @@ const QueueTitle = styled.h2`
 const CloseButton = styled.button`
   background: none;
   border: none;
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   cursor: pointer;
   padding: 8px;
   border-radius: 4px;
@@ -67,8 +69,8 @@ const CloseButton = styled.button`
   justify-content: center;
   
   &:hover {
-    color: #fff;
-    background-color: #282828;
+    color: ${({ theme }) => theme.colors.text};
+    background: ${({ theme }) => theme.colors.controlBg};
   }
   
   svg {
@@ -81,7 +83,7 @@ const CloseButton = styled.button`
 const ClearButton = styled.button`
   background: none;
   border: none;
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   cursor: pointer;
   padding: 6px 12px;
   border-radius: 4px;
@@ -91,8 +93,8 @@ const ClearButton = styled.button`
   gap: 6px;
   
   &:hover {
-    color: #fff;
-    background-color: #282828;
+    color: ${({ theme }) => theme.colors.text};
+    background: ${({ theme }) => theme.colors.controlBg};
   }
   
   svg {
@@ -105,6 +107,7 @@ const QueueList = styled.div`
   flex: 1;
   overflow-y: auto;
   padding: 8px 0;
+  scrollbar-color: ${({ theme }) => theme.colors.borderStrong} transparent;
 `;
 
 const QueueItem = styled.div`
@@ -115,17 +118,17 @@ const QueueItem = styled.div`
   transition: background-color 0.2s ease;
   
   &:hover {
-    background-color: #282828;
+    background: ${({ theme }) => theme.colors.controlBg};
   }
   
   &.current-track {
-    background-color: #282828;
-    border-left: 3px solid #1db954;
+    background: ${({ theme }) => theme.colors.accentSoft};
+    border-left: 3px solid ${({ theme }) => theme.colors.accent};
   }
 `;
 
 const DragHandle = styled.div`
-  color: #535353;
+  color: ${({ theme }) => theme.colors.subtle};
   cursor: grab;
   padding: 4px;
   display: flex;
@@ -145,12 +148,12 @@ const DragHandle = styled.div`
 const TrackArtwork = styled.div`
   width: 48px;
   height: 48px;
-  background-color: #282828;
+  background: ${({ theme }) => theme.colors.surfaceStrong};
   border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   font-size: 12px;
   margin-right: 12px;
   flex-shrink: 0;
@@ -166,7 +169,7 @@ interface TrackNameProps {
 }
 
 const TrackName = styled.div<TrackNameProps>`
-  color: ${props => props.$isCurrent ? '#1db954' : '#fff'};
+  color: ${props => props.$isCurrent ? props.theme.colors.accent : props.theme.colors.text};
   font-size: 14px;
   font-weight: ${props => props.$isCurrent ? '600' : '400'};
   white-space: nowrap;
@@ -176,7 +179,7 @@ const TrackName = styled.div<TrackNameProps>`
 `;
 
 const TrackArtist = styled.div`
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
@@ -184,7 +187,7 @@ const TrackArtist = styled.div`
 `;
 
 const TrackDuration = styled.div`
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   font-size: 12px;
   margin-left: 12px;
 `;
@@ -192,7 +195,7 @@ const TrackDuration = styled.div`
 const PlayButton = styled.button`
   background: none;
   border: none;
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   cursor: pointer;
   padding: 8px;
   border-radius: 50%;
@@ -202,8 +205,8 @@ const PlayButton = styled.button`
   margin-left: 8px;
   
   &:hover {
-    color: #fff;
-    background-color: #282828;
+    color: ${({ theme }) => theme.colors.text};
+    background: ${({ theme }) => theme.colors.controlBg};
   }
   
   svg {
@@ -215,7 +218,7 @@ const PlayButton = styled.button`
 const RemoveButton = styled.button`
   background: none;
   border: none;
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   cursor: pointer;
   padding: 8px;
   border-radius: 4px;
@@ -232,7 +235,7 @@ const RemoveButton = styled.button`
   
   &:hover {
     color: #fff;
-    background-color: #e74c3c;
+    background: ${({ theme }) => theme.colors.danger};
   }
   
   svg {
@@ -247,14 +250,14 @@ const EmptyQueue = styled.div`
   align-items: center;
   justify-content: center;
   padding: 40px 20px;
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   text-align: center;
 `;
 
 const EmptyQueueIcon = styled.div`
   width: 64px;
   height: 64px;
-  background-color: #282828;
+  background: ${({ theme }) => theme.colors.surfaceStrong};
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -264,7 +267,7 @@ const EmptyQueueIcon = styled.div`
   svg {
     width: 32px;
     height: 32px;
-    color: #535353;
+    color: ${({ theme }) => theme.colors.subtle};
   }
 `;
 
@@ -275,11 +278,11 @@ const EmptyQueueText = styled.div`
 
 const EmptyQueueSubtext = styled.div`
   font-size: 14px;
-  color: #535353;
+  color: ${({ theme }) => theme.colors.subtle};
 `;
 
 const SectionDivider = styled.div`
-  border-bottom: 1px solid #282828;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
   margin: 8px 0;
 `;
 
@@ -288,12 +291,12 @@ const SectionHeader = styled.div`
   align-items: center;
   justify-content: space-between;
   padding: 12px 20px;
-  background-color: #181818;
-  border-bottom: 1px solid #282828;
+  background: ${({ theme }) => theme.colors.surface};
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
 `;
 
 const SectionTitle = styled.h3`
-  color: #fff;
+  color: ${({ theme }) => theme.colors.text};
   font-size: 14px;
   font-weight: 600;
   margin: 0;
@@ -315,7 +318,7 @@ const RecentlyPlayedItem = styled(QueueItem)`
 const AddToQueueButton = styled.button`
   background: none;
   border: none;
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   cursor: pointer;
   padding: 8px;
   border-radius: 4px;
@@ -325,8 +328,8 @@ const AddToQueueButton = styled.button`
   margin-left: 8px;
   
   &:hover {
-    color: #1db954;
-    background-color: #282828;
+    color: ${({ theme }) => theme.colors.accent};
+    background: ${({ theme }) => theme.colors.controlBg};
   }
   
   svg {
@@ -337,8 +340,8 @@ const AddToQueueButton = styled.button`
 
 const NowPlayingSection = styled.div`
   padding: 16px 20px;
-  background-color: #1e1e1e;
-  border-bottom: 1px solid #282828;
+  background: ${({ theme }) => theme.colors.surfaceSoft};
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
 `;
 
 const NowPlayingHeader = styled.div`
@@ -346,7 +349,7 @@ const NowPlayingHeader = styled.div`
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
-  color: #1db954;
+  color: ${({ theme }) => theme.colors.accent};
   font-size: 14px;
   font-weight: 600;
   
@@ -365,7 +368,7 @@ const NowPlayingTrack = styled.div`
 const NowPlayingArtwork = styled.div`
   width: 56px;
   height: 56px;
-  background-color: #282828;
+  background: ${({ theme }) => theme.colors.surfaceStrong};
   border-radius: 4px;
   display: flex;
   align-items: center;
@@ -382,7 +385,7 @@ const NowPlayingArtwork = styled.div`
   }
   
   span {
-    color: #b3b3b3;
+    color: ${({ theme }) => theme.colors.muted};
     font-size: 20px;
   }
 `;
@@ -393,7 +396,7 @@ const NowPlayingInfo = styled.div`
 `;
 
 const NowPlayingTitle = styled.div`
-  color: #fff;
+  color: ${({ theme }) => theme.colors.text};
   font-size: 16px;
   font-weight: 600;
   white-space: nowrap;
@@ -403,7 +406,7 @@ const NowPlayingTitle = styled.div`
 `;
 
 const NowPlayingArtist = styled.div`
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   font-size: 14px;
   white-space: nowrap;
   overflow: hidden;
@@ -411,7 +414,7 @@ const NowPlayingArtist = styled.div`
 `;
 
 const NowPlayingDuration = styled.div`
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   font-size: 14px;
   margin-left: 12px;
 `;
@@ -419,7 +422,7 @@ const NowPlayingDuration = styled.div`
 const NowPlayingPlayButton = styled.button`
   background: none;
   border: none;
-  color: #1db954;
+  color: ${({ theme }) => theme.colors.accent};
   cursor: pointer;
   padding: 8px;
   border-radius: 50%;
@@ -429,8 +432,8 @@ const NowPlayingPlayButton = styled.button`
   margin-left: 8px;
   
   &:hover {
-    color: #1db954;
-    background-color: #282828;
+    color: ${({ theme }) => theme.colors.accentHover};
+    background: ${({ theme }) => theme.colors.controlBg};
   }
   
   svg {
@@ -440,7 +443,7 @@ const NowPlayingPlayButton = styled.button`
 `;
 
 const NoCurrentTrack = styled.div`
-  color: #535353;
+  color: ${({ theme }) => theme.colors.subtle};
   font-size: 14px;
   font-style: italic;
 `;
@@ -460,7 +463,7 @@ export const Queue: React.FC<QueueProps> = ({ isOpen, onClose }) => {
     clearQueue,
     reorderQueue,
     recentlyPlayed,
-    playTrack,
+    playFromQueue,
     addToQueue,
     currentTrack,
     togglePlayPause
@@ -510,10 +513,12 @@ export const Queue: React.FC<QueueProps> = ({ isOpen, onClose }) => {
   };
 
   const handlePlayRecentlyPlayed = (track: Music) => {
-    playTrack(track);
+    const visibleRecentlyPlayed = recentlyPlayed.slice(0, 10);
+    const index = visibleRecentlyPlayed.findIndex(item => item.id === track.id);
+    playFromQueue(visibleRecentlyPlayed, index === -1 ? 0 : index);
   };
 
-  return (
+  const queueDrawer = (
     <QueueContainer $isOpen={isOpen}>
       <QueueHeader>
         <QueueTitle>Queue</QueueTitle>
@@ -719,4 +724,6 @@ export const Queue: React.FC<QueueProps> = ({ isOpen, onClose }) => {
       </QueueList>
     </QueueContainer>
   );
+
+  return createPortal(queueDrawer, document.body);
 };

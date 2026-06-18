@@ -1,4 +1,4 @@
-export type AppThemeName = 'midnight' | 'ember' | 'daylight'
+export type AppThemeName = 'midnight' | 'dark' | 'ember' | 'daylight'
 
 export interface AppTheme {
   name: AppThemeName
@@ -67,6 +67,38 @@ export const appThemes: Record<AppThemeName, AppTheme> = {
       selection: 'rgba(56, 189, 248, 0.35)',
       overlay: 'rgba(3, 7, 18, 0.72)',
       shadow: 'rgba(0, 0, 0, 0.45)',
+    },
+  },
+  dark: {
+    name: 'dark',
+    label: 'Dark Mode',
+    description: 'Neutral charcoal surfaces with crisp blue-violet accents.',
+    colors: {
+      background: '#05070b',
+      backgroundElevated: '#090d14',
+      surface: '#111318',
+      surfaceSoft: 'rgba(21, 24, 31, 0.78)',
+      surfaceStrong: '#1a1d25',
+      text: '#f5f7fb',
+      muted: '#a8b0bd',
+      subtle: '#697282',
+      border: 'rgba(148, 163, 184, 0.14)',
+      borderStrong: 'rgba(129, 140, 248, 0.34)',
+      accent: '#60a5fa',
+      accentHover: '#818cf8',
+      accentSoft: 'rgba(96, 165, 250, 0.14)',
+      accentText: '#05070b',
+      accentGradient: 'linear-gradient(135deg, #60a5fa 0%, #8b5cf6 100%)',
+      contentGradient: 'linear-gradient(to bottom, rgba(25, 35, 58, 0.76) 0, rgba(12, 18, 30, 0.58) 185px, #05070b 430px)',
+      playerBg: 'linear-gradient(135deg, rgba(9, 13, 20, 0.98), rgba(15, 18, 27, 0.98))',
+      playerGlow: 'rgba(96, 165, 250, 0.16)',
+      controlBg: 'rgba(148, 163, 184, 0.08)',
+      progressTrack: 'rgba(148, 163, 184, 0.20)',
+      danger: '#fb7185',
+      success: '#22c55e',
+      selection: 'rgba(96, 165, 250, 0.30)',
+      overlay: 'rgba(2, 6, 12, 0.76)',
+      shadow: 'rgba(0, 0, 0, 0.58)',
     },
   },
   ember: {

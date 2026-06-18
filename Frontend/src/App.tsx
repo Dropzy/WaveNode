@@ -18,6 +18,7 @@ import Setup from './pages/Setup';
 import Account from './pages/Account';
 import SmartPlaylistEditor from './pages/SmartPlaylistEditor';
 import History from './pages/History';
+import LastFMCallback from './pages/LastFMCallback';
 import { GlobalStyle } from './styles/GlobalStyle';
 import { AppThemeProvider } from './contexts/ThemeContext';
 import { setupAPI, SetupStatus } from './services/api';
@@ -84,6 +85,7 @@ function SetupAwareApp() {
         <Route path="/smart-playlist/:id/edit" element={<ProtectedRoute><Layout><SmartPlaylistEditor /></Layout></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute><Layout><AdminDashboard /></Layout></ProtectedRoute>} />
         <Route path="/account" element={<ProtectedRoute><Layout><Account /></Layout></ProtectedRoute>} />
+        <Route path="/lastfm/callback" element={<ProtectedRoute><Layout><LastFMCallback /></Layout></ProtectedRoute>} />
         <Route path="/history" element={<ProtectedRoute><Layout><History /></Layout></ProtectedRoute>} />
       </Routes>
     </AudioProvider>

@@ -723,6 +723,18 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 
 // getStats returns server statistics (admin only)
 func (r *Router) getStats(w http.ResponseWriter, req *http.Request) {
+	userID, err := auth.GetUserFromContext(req)
+	if err != nil {
+		response := map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
 	// Get enrichment statistics
 	enrichmentStats, err := r.db.GetEnrichmentStatistics()
 	if err != nil {
@@ -740,7 +752,7 @@ func (r *Router) getStats(w http.ResponseWriter, req *http.Request) {
 	music, _ := r.db.GetAllMusic()
 	artists, _ := r.db.GetAllArtists()
 	albums, _ := r.db.GetAllAlbums()
-	playlists, _ := r.db.GetAllPlaylists()
+	playlists, _ := r.db.GetUserPlaylists(userID)
 
 	totalTracks := len(music)
 	totalArtists := len(artists)
@@ -1709,8 +1721,16 @@ func (r *Router) searchAlbums(query string) ([]map[string]interface{}, error) {
 			strings.Contains(strings.ToLower(album.Artist), searchLower) {
 
 			albumMap := map[string]interface{}{
-				"name":   album.Name,
-				"artist": album.Artist,
+				"id":                   album.ID,
+				"name":                 album.Name,
+				"artist":               album.Artist,
+				"year":                 album.Year,
+				"track_count":          album.TrackCount,
+				"cover_art_url":        album.CoverArtURL,
+				"cover_art_small_url":  album.CoverArtSmallURL,
+				"cover_art_medium_url": album.CoverArtMediumURL,
+				"cover_art_large_url":  album.CoverArtLargeURL,
+				"cover_art_source":     album.CoverArtSource,
 			}
 			filteredAlbums = append(filteredAlbums, albumMap)
 		}

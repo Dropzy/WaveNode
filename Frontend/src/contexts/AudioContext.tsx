@@ -42,6 +42,7 @@ interface AudioContextType {
   volume: number;
   isLoading: boolean;
   playTrack: (track: Music) => Promise<void>;
+  playFromQueue: (tracks: Music[], index: number) => void;
   playPlaylist: (tracks: Music[]) => void;
   playPlaylistShuffled: (tracks: Music[]) => void;
   addToQueue: (track: Music) => void;
@@ -366,6 +367,16 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
     }
   };
 
+  const playFromQueue = (tracks: Music[], index: number) => {
+    if (tracks.length === 0) {
+      return;
+    }
+    const safeIndex = Math.max(0, Math.min(index, tracks.length - 1));
+    setPlaylistQueue(tracks);
+    setCurrentTrackIndex(safeIndex);
+    void playTrack(tracks[safeIndex]);
+  };
+
   const playPlaylistShuffled = (tracks: Music[]) => {
     if (tracks.length > 0) {
       // Create a shuffled copy of tracks array
@@ -503,6 +514,7 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
     volume,
     isLoading,
     playTrack,
+    playFromQueue,
     playPlaylist,
     playPlaylistShuffled,
     addToQueue,

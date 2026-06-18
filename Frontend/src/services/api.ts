@@ -352,8 +352,17 @@ export interface APIResponse<T> {
 
 export interface SearchResult {
   songs: Music[]
-  albums: Array<{ name: string; artist: string; year: number }>
-  artists: Array<{ id?: string; name: string; track_count: number; album_count: number }>
+  albums: Album[]
+  artists: Array<{
+    id?: string
+    name: string
+    track_count: number
+    album_count: number
+    image_url?: string
+    image_small_url?: string
+    image_medium_url?: string
+    image_large_url?: string
+  }>
   playlists: Playlist[]
 }
 
@@ -715,8 +724,8 @@ export const accountAPI = {
     }
     return response.data.data
   },
-  completeLastFMAuth: async (): Promise<ScrobbleSettings> => {
-    const response = await api.post<APIResponse<ScrobbleSettings>>('/scrobble/lastfm/complete')
+  completeLastFMAuth: async (token?: string): Promise<ScrobbleSettings> => {
+    const response = await api.post<APIResponse<ScrobbleSettings>>('/scrobble/lastfm/complete', token ? { token } : {})
     if (!response.data.data) {
       throw new Error(response.data.error || 'Last.fm connection could not be completed')
     }

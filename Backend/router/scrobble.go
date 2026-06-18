@@ -33,6 +33,7 @@ type scrobbleSettings struct {
 	LastFMSessionKey    string `json:"lastfm_session_key,omitempty"`
 	LastFMUsername      string `json:"lastfm_username,omitempty"`
 	LastFMPendingToken  string `json:"lastfm_pending_token,omitempty"`
+	LastFMPendingAPIKey string `json:"lastfm_pending_api_key,omitempty"`
 }
 
 type scrobbleSettingsResponse struct {
@@ -62,6 +63,10 @@ type lastFMAppSettingsResponse struct {
 
 type lastFMStartResponse struct {
 	AuthURL string `json:"auth_url"`
+}
+
+type lastFMCompleteRequest struct {
+	Token string `json:"token"`
 }
 
 func (r *Router) getScrobbleSettings(w http.ResponseWriter, req *http.Request) {
@@ -152,21 +157,32 @@ func (r *Router) startLastFMAuth(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	token, err := requestLastFMToken(appSettings.APIKey, appSettings.SharedSecret)
-	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, err.Error())
-		return
-	}
+	token := strings.TrimSpace(existing.LastFMPendingToken)
+	if token == "" || existing.LastFMPendingAPIKey != appSettings.APIKey || existing.LastFMSessionKey != "" {
+		var err error
+		token, err = requestLastFMToken(appSettings.APIKey, appSettings.SharedSecret)
+		if err != nil {
+			writeJSONError(w, http.StatusBadGateway, err.Error())
+			return
+		}
 
-	existing.LastFMPendingToken = token
-	if err := r.saveScrobbleSettings(userID, existing); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
-		return
+		existing.LastFMPendingToken = token
+		existing.LastFMPendingAPIKey = appSettings.APIKey
+		if existing.LastFMSessionKey != "" {
+			existing.LastFMSessionKey = ""
+			existing.LastFMUsername = ""
+			existing.LastFMEnabled = false
+		}
+		if err := r.saveScrobbleSettings(userID, existing); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 
 	authURL := "https://www.last.fm/api/auth/?" + url.Values{
 		"api_key": {appSettings.APIKey},
 		"token":   {token},
+		"cb":      {lastFMCallbackURL(req)},
 	}.Encode()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
@@ -194,8 +210,28 @@ func (r *Router) completeLastFMAuth(w http.ResponseWriter, req *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "Start the Last.fm connection first")
 		return
 	}
+	if settings.LastFMPendingAPIKey != "" && settings.LastFMPendingAPIKey != appSettings.APIKey {
+		settings.LastFMPendingToken = ""
+		settings.LastFMPendingAPIKey = ""
+		_ = r.saveScrobbleSettings(userID, settings)
+		writeJSONError(w, http.StatusBadRequest, "Last.fm settings changed. Open Last.fm again to approve the new connection.")
+		return
+	}
+	token := strings.TrimSpace(req.URL.Query().Get("token"))
+	if token == "" && req.Body != nil {
+		var payload lastFMCompleteRequest
+		_ = json.NewDecoder(req.Body).Decode(&payload)
+		token = strings.TrimSpace(payload.Token)
+	}
+	if token == "" {
+		token = settings.LastFMPendingToken
+	}
+	if token != settings.LastFMPendingToken {
+		writeJSONError(w, http.StatusBadRequest, "Last.fm returned an unexpected auth token")
+		return
+	}
 
-	sessionKey, username, err := requestLastFMSession(appSettings.APIKey, appSettings.SharedSecret, settings.LastFMPendingToken)
+	sessionKey, username, err := requestLastFMSession(appSettings.APIKey, appSettings.SharedSecret, token)
 	if err != nil {
 		writeJSONError(w, http.StatusBadGateway, err.Error())
 		return
@@ -203,6 +239,7 @@ func (r *Router) completeLastFMAuth(w http.ResponseWriter, req *http.Request) {
 	settings.LastFMSessionKey = sessionKey
 	settings.LastFMUsername = username
 	settings.LastFMPendingToken = ""
+	settings.LastFMPendingAPIKey = ""
 	settings.LastFMEnabled = true
 	if err := r.saveScrobbleSettings(userID, settings); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
@@ -226,6 +263,7 @@ func (r *Router) disconnectLastFM(w http.ResponseWriter, req *http.Request) {
 	settings.LastFMSessionKey = ""
 	settings.LastFMUsername = ""
 	settings.LastFMPendingToken = ""
+	settings.LastFMPendingAPIKey = ""
 	if err := r.saveScrobbleSettings(userID, settings); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -480,9 +518,29 @@ func postLastFM(params map[string]string) ([]byte, error) {
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if message := lastFMErrorMessage(body); message != "" {
+			return nil, fmt.Errorf("%s", message)
+		}
 		return nil, fmt.Errorf("Last.fm returned %s", resp.Status)
 	}
 	return body, nil
+}
+
+func lastFMErrorMessage(body []byte) string {
+	var parsed struct {
+		Error   interface{} `json:"error"`
+		Message string      `json:"message"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return ""
+	}
+	if parsed.Error == nil && parsed.Message == "" {
+		return ""
+	}
+	if parsed.Message != "" {
+		return fmt.Sprintf("Last.fm rejected the request: %s", parsed.Message)
+	}
+	return fmt.Sprintf("Last.fm rejected the request: %v", parsed.Error)
 }
 
 func submitListenBrainzScrobble(token string, track database.Music, event string, listenedAt time.Time) error {
@@ -590,4 +648,24 @@ func lastFMSignature(params map[string]string, sharedSecret string) string {
 	builder.WriteString(sharedSecret)
 	sum := md5.Sum([]byte(builder.String()))
 	return hex.EncodeToString(sum[:])
+}
+
+func lastFMCallbackURL(req *http.Request) string {
+	origin := strings.TrimSpace(req.Header.Get("Origin"))
+	if origin != "" {
+		return strings.TrimRight(origin, "/") + "/lastfm/callback"
+	}
+
+	proto := strings.TrimSpace(req.Header.Get("X-Forwarded-Proto"))
+	if proto == "" {
+		proto = "http"
+		if req.TLS != nil {
+			proto = "https"
+		}
+	}
+	host := strings.TrimSpace(req.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = req.Host
+	}
+	return proto + "://" + host + "/lastfm/callback"
 }

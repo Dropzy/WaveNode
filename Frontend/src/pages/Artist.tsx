@@ -444,7 +444,7 @@ const formatDate = (dateString: string): string => {
 export const Artist: React.FC = () => {
   const { artistId } = useParams<{ artistId: string }>()
   const { token } = useAuth()
-  const { playTrack, playPlaylist, playPlaylistShuffled } = useAudio()
+  const { playFromQueue, playPlaylist, playPlaylistShuffled } = useAudio()
   const navigate = useNavigate()
   const [artistData, setArtistData] = useState<ArtistTracksResponse | null>(null)
   const [artistImage, setArtistImage] = useState<ArtistImage | null>(null)
@@ -501,8 +501,12 @@ export const Artist: React.FC = () => {
   }
 
   const handlePlayTrack = useCallback((track: Track) => {
-    playTrack(track)
-  }, [playTrack])
+    if (!artistData?.tracks?.length) {
+      return
+    }
+    const index = artistData.tracks.findIndex(item => item.id === track.id)
+    playFromQueue(artistData.tracks, index === -1 ? 0 : index)
+  }, [artistData?.tracks, playFromQueue])
 
   const handlePlayAll = useCallback(() => {
     if (artistData?.tracks && artistData.tracks.length > 0) {

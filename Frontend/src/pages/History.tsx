@@ -6,7 +6,7 @@ import { useAudio } from '../contexts/AudioContext'
 import { getTrackArtworkUrl } from '../utils/mediaUrl'
 
 export default function History() {
-  const { playTrack } = useAudio()
+  const { playFromQueue } = useAudio()
   const [entries, setEntries] = useState<ListeningHistoryEntry[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -43,8 +43,8 @@ export default function History() {
       {error && <ErrorText>{error}</ErrorText>}
       {loading ? <Empty>Loading history...</Empty> : entries.length === 0 ? <Empty>No matching plays.</Empty> : (
         <List>
-          {entries.map(entry => (
-            <Row key={entry.id} onDoubleClick={() => playTrack(entry.track)}>
+          {entries.map((entry, index) => (
+            <Row key={entry.id} onDoubleClick={() => playFromQueue(entries.map(item => item.track), index)}>
               <Artwork $url={getTrackArtworkUrl(entry.track)}><Play size={16} /></Artwork>
               <Track><strong>{entry.track.title}</strong><span>{entry.track.artist} · {entry.track.album}</span></Track>
               <Source>{entry.source}{entry.device ? ` · ${entry.device}` : ''}</Source>

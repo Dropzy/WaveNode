@@ -331,21 +331,6 @@ const DiscoveryControls = styled.div`
   margin-bottom: 16px;
 `
 
-const DiscoveryInput = styled.input`
-  flex: 1 1 280px;
-  min-width: 220px;
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: 999px;
-  background: ${({ theme }) => theme.colors.background};
-  color: ${({ theme }) => theme.colors.text};
-  padding: 12px 16px;
-
-  &:focus {
-    border-color: ${({ theme }) => theme.colors.accent};
-    outline: none;
-  }
-`
-
 const DiscoveryButton = styled.button<{ $primary?: boolean }>`
   border: 1px solid ${({ theme, $primary }) => $primary ? theme.colors.accent : theme.colors.border};
   border-radius: 999px;
@@ -412,13 +397,12 @@ const pluginItemToTrack = (pluginID: string, item: PluginRowItem): Music => ({
 
 export const Home: React.FC = () => {
   const { isAuthenticated } = useAuth()
-  const { playTrack } = useAudio()
+  const { playFromQueue } = useAudio()
   const [recentlyPlayed, setRecentlyPlayed] = useState<Music[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [pluginRows, setPluginRows] = useState<PluginHomeRow[]>([])
   const [pluginError, setPluginError] = useState<string | null>(null)
-  const [listenBrainzUser, setListenBrainzUser] = useState('')
   const [discoveryPreview, setDiscoveryPreview] = useState<DiscoveryPreview | null>(null)
   const [discoveryLoading, setDiscoveryLoading] = useState(false)
   const [discoveryMessage, setDiscoveryMessage] = useState<string | null>(null)
@@ -491,34 +475,10 @@ export const Home: React.FC = () => {
     }
   }, [isAuthenticated])
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setListenBrainzUser('')
-      setDiscoveryPreview(null)
-      return
-    }
-
-    let active = true
-    void discoveryAPI.getSettings()
-      .then(settings => {
-        if (active) {
-          setListenBrainzUser(settings.listenbrainz_user || '')
-        }
-      })
-      .catch(err => {
-        console.error('Failed to load discovery settings:', err)
-        if (active) {
-          setDiscoveryError('Discovery settings could not be loaded')
-        }
-      })
-    return () => {
-      active = false
-    }
-  }, [isAuthenticated])
-
-  const handlePlayTrack = async (track: Music) => {
+  const handlePlayTrack = async (track: Music, queue: Music[] = [track]) => {
     try {
-      await playTrack(track)
+      const index = queue.findIndex(item => item.id === track.id)
+      playFromQueue(queue, index === -1 ? 0 : index)
     } catch (err) {
       console.error('Failed to play track:', err)
     }
@@ -533,34 +493,11 @@ export const Home: React.FC = () => {
     return fallback
   }
 
-  const handleSaveDiscoverySettings = async () => {
-    try {
-      setDiscoveryLoading(true)
-      setDiscoveryError(null)
-      setDiscoveryMessage(null)
-      const saved = await discoveryAPI.saveSettings({ listenbrainz_user: listenBrainzUser.trim() })
-      setListenBrainzUser(saved.listenbrainz_user)
-      setDiscoveryPreview(null)
-      setDiscoveryMessage('ListenBrainz username saved. Use Preview matches to check recommendations.')
-    } catch (err) {
-      console.error('Failed to save discovery settings:', err)
-      setDiscoveryError(discoveryErrorMessage(err, 'Could not save ListenBrainz username'))
-    } finally {
-      setDiscoveryLoading(false)
-    }
-  }
-
   const handlePreviewDiscovery = async () => {
     try {
       setDiscoveryLoading(true)
       setDiscoveryError(null)
       setDiscoveryMessage(null)
-      if (!listenBrainzUser.trim()) {
-        await discoveryAPI.saveSettings({ listenbrainz_user: '' })
-        setDiscoveryError('Enter a ListenBrainz username first')
-        return
-      }
-      await discoveryAPI.saveSettings({ listenbrainz_user: listenBrainzUser.trim() })
       const preview = await discoveryAPI.preview('weekly-exploration')
       setDiscoveryPreview(preview)
       setDiscoveryMessage(`Matched ${preview.matched.length} of ${preview.total} ListenBrainz recommendations in your library`)
@@ -608,6 +545,8 @@ export const Home: React.FC = () => {
     )
   }
 
+  const visibleRecentlyPlayed = recentlyPlayed.slice(0, trackLimit)
+
   return (
     <HomeContainer>
       <Section>
@@ -632,13 +571,13 @@ export const Home: React.FC = () => {
               <EmptyStateSubtext>Start playing music to see your listening history here</EmptyStateSubtext>
             </EmptyState>
           ) : (
-            recentlyPlayed.slice(0, trackLimit).map((track) => {
+            visibleRecentlyPlayed.map((track) => {
               const artworkUrl = getTrackArtworkUrl(track)
 
               return (
               <TrackCard 
                 key={track.id}
-                onClick={() => handlePlayTrack(track)}
+                onClick={() => handlePlayTrack(track, visibleRecentlyPlayed)}
               >
                 <TrackCoverArt
                   $imageUrl={artworkUrl}
@@ -677,12 +616,15 @@ export const Home: React.FC = () => {
               <SectionTitle><Radio size={24} /> {row.title}</SectionTitle>
               {row.subtitle && <EmptyStateSubtext style={{ margin: '-16px 0 18px' }}>{row.subtitle}</EmptyStateSubtext>}
               <RadioGrid>
-                {row.items.map(item => (
+                {row.items.map(item => {
+                  const rowTracks = row.items.map(rowItem => pluginItemToTrack(row.plugin_id, rowItem))
+                  const track = pluginItemToTrack(row.plugin_id, item)
+                  return (
                   <RadioCard
                     key={item.id}
                     type="button"
                     title={item.description || `Play ${item.title}`}
-                    onClick={() => void handlePlayTrack(pluginItemToTrack(row.plugin_id, item))}
+                    onClick={() => void handlePlayTrack(track, rowTracks)}
                   >
                     <RadioArtwork
                       $imageUrl={item.image_url}
@@ -695,7 +637,8 @@ export const Home: React.FC = () => {
                       <span>{item.subtitle || 'Live radio'}</span>
                     </RadioDetails>
                   </RadioCard>
-                ))}
+                  )
+                })}
               </RadioGrid>
             </Section>
           ))}
@@ -706,15 +649,6 @@ export const Home: React.FC = () => {
         <SectionTitle>Made for you</SectionTitle>
         <DiscoveryPanel>
           <DiscoveryControls>
-            <DiscoveryInput
-              value={listenBrainzUser}
-              onChange={(event) => setListenBrainzUser(event.target.value)}
-              placeholder="ListenBrainz username, for example your ListenBrainz profile name"
-              aria-label="ListenBrainz username"
-            />
-            <DiscoveryButton type="button" onClick={handleSaveDiscoverySettings} disabled={discoveryLoading}>
-              Save username
-            </DiscoveryButton>
             <DiscoveryButton type="button" $primary onClick={handlePreviewDiscovery} disabled={discoveryLoading}>
               Preview matches
             </DiscoveryButton>
@@ -739,7 +673,7 @@ export const Home: React.FC = () => {
                 {discoveryPreview.matched.slice(0, 8).map((track) => {
                   const artworkUrl = getTrackArtworkUrl(track)
                   return (
-                    <TrackCard key={track.id} onClick={() => handlePlayTrack(track)}>
+                    <TrackCard key={track.id} onClick={() => handlePlayTrack(track, discoveryPreview.matched)}>
                       <TrackCoverArt
                         $imageUrl={artworkUrl}
                         $fallback={getArtworkGradient(`${track.album}|${track.artist}`)}
@@ -776,7 +710,7 @@ export const Home: React.FC = () => {
                 <MusicIcon size={48} />
               </EmptyStateIcon>
               <EmptyStateText>Import recommendations from ListenBrainz</EmptyStateText>
-              <EmptyStateSubtext>WaveNode will only add tracks that already exist in your library</EmptyStateSubtext>
+              <EmptyStateSubtext>Set your ListenBrainz username in Account, then preview matches here</EmptyStateSubtext>
             </EmptyState>
           )}
         </DiscoveryPanel>

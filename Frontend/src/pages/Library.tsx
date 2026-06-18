@@ -1172,7 +1172,7 @@ const formatDateAdded = (dateString: string): string => {
 
 export const Library: React.FC = () => {
   const { isAuthenticated, token } = useAuth()
-  const { playTrack, playPlaylist, addToQueue } = useAudio()
+  const { playFromQueue, playPlaylist, addToQueue } = useAudio()
   const navigate = useNavigate()
   const [music, setMusic] = useState<Music[]>([])
   const [playlists, setPlaylists] = useState<Playlist[]>([])
@@ -1834,7 +1834,9 @@ export const Library: React.FC = () => {
     if (e) {
       e.stopPropagation()
     }
-    playTrack(track)
+    const tracks = activeTab === 'downloads' ? filteredDownloads : sortedMusic
+    const index = tracks.findIndex(item => item.id === track.id)
+    playFromQueue(tracks, index === -1 ? 0 : index)
   }
 
   const handlePlayAlbum = async (albumId: string, albumName: string, artistName: string, e?: React.MouseEvent) => {
@@ -2253,8 +2255,8 @@ export const Library: React.FC = () => {
                 onMouseEnter={() => setHoveredTrackIndex(index)}
                 onMouseLeave={() => setHoveredTrackIndex(null)}
                 onClick={event => trackSelection.selectIndex(index, event)}
-                onDoubleClick={() => void playTrack(track)}
-                onKeyDown={event => trackSelection.handleKeyDown(index, event, () => void playTrack(track))}
+                onDoubleClick={() => handlePlayTrack(track)}
+                onKeyDown={event => trackSelection.handleKeyDown(index, event, () => handlePlayTrack(track))}
                 onContextMenu={event => handleContextMenu(event, track, index)}
               >
                 <TrackNumberContainer>
@@ -2328,8 +2330,8 @@ export const Library: React.FC = () => {
                 onMouseEnter={() => setHoveredTrackIndex(index)}
                 onMouseLeave={() => setHoveredTrackIndex(null)}
                 onClick={event => trackSelection.selectIndex(index, event)}
-                onDoubleClick={() => void playTrack(track)}
-                onKeyDown={event => trackSelection.handleKeyDown(index, event, () => void playTrack(track))}
+                onDoubleClick={() => handlePlayTrack(track)}
+                onKeyDown={event => trackSelection.handleKeyDown(index, event, () => handlePlayTrack(track))}
                 onContextMenu={event => handleContextMenu(event, track, index)}
               >
                 <TrackNumberContainer>

@@ -5,6 +5,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
+COPY artistmeta ./artistmeta
 COPY auth ./auth
 COPY cmd ./cmd
 COPY config ./config

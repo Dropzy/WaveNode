@@ -419,7 +419,7 @@ const SimilarAlbumTracks = styled.div`
 export const Album: React.FC = () => {
   const { albumName } = useParams<{ albumName: string }>()
   const { token } = useAuth()
-  const { playTrack, playPlaylist, playPlaylistShuffled } = useAudio()
+  const { playFromQueue, playPlaylist, playPlaylistShuffled } = useAudio()
   const navigate = useNavigate()
   const [albumData, setAlbumData] = useState<AlbumTracksResponse | null>(null)
   const [fallbackData, setFallbackData] = useState<AlbumTracksFallbackResponse | null>(null)
@@ -477,8 +477,12 @@ export const Album: React.FC = () => {
   }
 
   const handlePlayTrack = useCallback((track: Track) => {
-    playTrack(track)
-  }, [playTrack])
+    if (!albumData?.tracks?.length) {
+      return
+    }
+    const index = albumData.tracks.findIndex(item => item.id === track.id)
+    playFromQueue(albumData.tracks, index === -1 ? 0 : index)
+  }, [albumData?.tracks, playFromQueue])
 
   const handlePlayAll = useCallback(() => {
     if (albumData?.tracks && albumData.tracks.length > 0) {
