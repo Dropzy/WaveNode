@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<full-backup-content>
-    <!-- Include all files by default -->
-    <include domain="file" path="."/>
-    <!-- Exclude sensitive data -->
-    <exclude domain="file" path="no_backup/"/>
-</full-backup-content>

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { useAudio } from '../contexts/AudioContext'
 import { Queue } from './Queue'
-import { likedTracksAPI, pluginsAPI, ratingsAPI } from '../services/api'
+import { accountAPI, likedTracksAPI, pluginsAPI, ratingsAPI, UserSession } from '../services/api'
 import { getTrackArtworkUrl } from '../utils/mediaUrl'
 import { 
   Play, 
@@ -19,6 +19,8 @@ import {
   Mic2,
   List,
   Monitor,
+  Smartphone,
+  Cast,
   MoreHorizontal
 } from 'lucide-react'
 
@@ -529,12 +531,112 @@ const RatingControls = styled.div`
   }
 `
 
+const ConnectControl = styled.div`
+  position: relative;
+  display: flex;
+`
+
+const ConnectButton = styled(IconButton)`
+  &.connected {
+    color: ${({ theme }) => theme.colors.accent};
+  }
+`
+
+const ConnectMenu = styled.div`
+  position: absolute;
+  right: -12px;
+  bottom: calc(100% + 14px);
+  width: 320px;
+  max-height: 420px;
+  overflow-y: auto;
+  background: ${({ theme }) => theme.colors.surface};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 18px;
+  box-shadow: 0 22px 70px ${({ theme }) => theme.colors.shadow};
+  padding: 10px;
+  z-index: 1200;
+`
+
+const ConnectMenuHeader = styled.div`
+  padding: 8px 10px 10px;
+  color: ${({ theme }) => theme.colors.text};
+  font-size: 14px;
+  font-weight: 800;
+`
+
+const ConnectMenuHint = styled.div`
+  padding: 0 10px 8px;
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: 11px;
+  line-height: 1.4;
+`
+
+const ConnectDeviceButton = styled.button<{ $active?: boolean }>`
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  background: ${({ theme, $active }) => $active ? theme.colors.accentSoft : 'transparent'};
+  color: ${({ theme, $active }) => $active ? theme.colors.accent : theme.colors.text};
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 10px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.controlBg};
+  }
+
+  svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+`
+
+const ConnectDeviceText = styled.span`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+`
+
+const ConnectDeviceName = styled.span`
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`
+
+const ConnectDeviceMeta = styled.span`
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`
+
+const ConnectMessage = styled.div`
+  padding: 10px;
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: 12px;
+`
+
 export const Player: React.FC = () => {
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [rating, setRating] = useState(0);
   const [radioStreamTitle, setRadioStreamTitle] = useState('');
+  const [isConnectOpen, setIsConnectOpen] = useState(false);
+  const [sessions, setSessions] = useState<UserSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState('');
+  const [connectError, setConnectError] = useState('');
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const previousVolumeRef = useRef(1);
+  const connectControlRef = useRef<HTMLDivElement>(null);
   
   const { 
     currentTrack, 
@@ -549,7 +651,12 @@ export const Player: React.FC = () => {
     setVolume, 
     seekTo, 
     toggleShuffle, 
-    setRepeatMode 
+    setRepeatMode,
+    connectedPlaybackSessionId,
+    connectedPlaybackDeviceName,
+    controlledByPlaybackSessionId,
+    connectPlaybackTo,
+    returnPlaybackToThisDevice,
   } = useAudio();
 
   const artworkUrl = getTrackArtworkUrl(currentTrack);
@@ -559,6 +666,12 @@ export const Player: React.FC = () => {
   const displaySubtitle = isRadioStream && radioStreamTitle
     ? currentTrack?.title
     : currentTrack?.artist;
+  const isConnectActive = Boolean(connectedPlaybackSessionId || controlledByPlaybackSessionId);
+  const connectButtonTitle = connectedPlaybackSessionId
+    ? `Playing on ${connectedPlaybackDeviceName}`
+    : controlledByPlaybackSessionId
+      ? 'Being controlled from another device'
+      : 'Connect to a device';
 
   useEffect(() => {
     let isCurrent = true;
@@ -639,6 +752,53 @@ export const Player: React.FC = () => {
     });
   }, [artworkUrl, currentTrack, radioStreamTitle]);
 
+  useEffect(() => {
+    if (!isConnectOpen) {
+      return;
+    }
+
+    let active = true;
+    const loadSessions = async () => {
+      setIsLoadingSessions(true);
+      setConnectError('');
+      try {
+        const result = await accountAPI.getSessions();
+        if (active) {
+          setSessions(result.sessions || []);
+          setCurrentSessionId(result.current_session_id || '');
+        }
+      } catch {
+        if (active) {
+          setConnectError('Could not load devices');
+        }
+      } finally {
+        if (active) {
+          setIsLoadingSessions(false);
+        }
+      }
+    };
+
+    void loadSessions();
+    return () => {
+      active = false;
+    };
+  }, [isConnectOpen]);
+
+  useEffect(() => {
+    if (!isConnectOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!connectControlRef.current?.contains(event.target as Node)) {
+        setIsConnectOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [isConnectOpen]);
+
   const formatTime = (seconds: number): string => {
     if (!Number.isFinite(seconds)) return 'LIVE';
     const mins = Math.floor(seconds / 60);
@@ -712,6 +872,95 @@ export const Player: React.FC = () => {
       setRating(await ratingsAPI.setRating(currentTrack.id, value));
     } catch {
       setRating(previousRating);
+    }
+  };
+
+  const getDeviceIcon = (session: UserSession) => {
+    const label = `${session.device_name} ${session.user_agent}`.toLowerCase();
+    return label.includes('android') || label.includes('mobile') || label.includes('okhttp')
+      ? <Smartphone size={20} />
+      : <Monitor size={20} />;
+  };
+
+  const displayDeviceName = (session: UserSession) => {
+    const label = `${session.device_name} ${session.user_agent}`.toLowerCase();
+    if (label.includes('wavenode desktop') || label.includes('electron')) {
+      return 'WaveNode';
+    }
+    if (label.includes('wavenode android') || label.includes('okhttp')) {
+      return 'WaveNode';
+    }
+    return session.device_name || 'WaveNode device';
+  };
+
+  const displayDeviceMeta = (session: UserSession) => {
+    const label = `${session.device_name} ${session.user_agent}`.toLowerCase();
+    if (label.includes('wavenode desktop') || label.includes('electron')) {
+      return 'Desktop app';
+    }
+    if (label.includes('wavenode android') || label.includes('okhttp')) {
+      return 'Mobile app';
+    }
+    if (label.includes('iphone') || label.includes('ipad')) {
+      return 'Apple mobile device';
+    }
+    if (label.includes('android') || label.includes('mobile')) {
+      return 'Mobile browser';
+    }
+    return session.device_name || 'WaveNode device';
+  };
+
+  const connectSessionKey = (session: UserSession) => {
+    const label = `${session.device_name} ${session.user_agent}`.toLowerCase();
+    const isDesktopAppSession = label.includes('wavenode desktop') || label.includes('electron');
+    const isBrowserSession = !isDesktopAppSession && (label.includes('browser') || label.includes('mozilla'));
+    const isMobileSession = label.includes('android') || label.includes('iphone') || label.includes('ipad') || label.includes('mobile') || label.includes('okhttp');
+    if (isBrowserSession && !isMobileSession) {
+      return `browser|${session.ip_address.trim()}`;
+    }
+    return `${session.device_name.trim().toLowerCase()}|${session.user_agent.trim().toLowerCase()}|${session.ip_address.trim()}`;
+  };
+
+  const activeSessions = sessions
+    .filter(session => {
+      if (session.revoked_at) {
+        return false;
+      }
+      if (session.id === currentSessionId) {
+        return true;
+      }
+      const lastSeen = Date.parse(session.last_seen_at);
+      return Number.isFinite(lastSeen) && Date.now() - lastSeen < 15 * 60 * 1000;
+    })
+    .sort((a, b) => {
+      if (a.id === currentSessionId) return -1;
+      if (b.id === currentSessionId) return 1;
+      return Date.parse(b.last_seen_at) - Date.parse(a.last_seen_at);
+    })
+    .filter((session, index, visibleSessions) => {
+      if (session.id === currentSessionId) {
+        return true;
+      }
+      const sessionKey = connectSessionKey(session);
+      return visibleSessions.findIndex(candidate => {
+        if (candidate.id === currentSessionId) {
+          return false;
+        }
+        return connectSessionKey(candidate) === sessionKey;
+      }) === index;
+    });
+
+  const handleConnectToSession = async (session: UserSession) => {
+    setConnectError('');
+    try {
+      if (session.id === currentSessionId) {
+        await returnPlaybackToThisDevice();
+      } else {
+        await connectPlaybackTo(session.id, displayDeviceName(session));
+      }
+      setIsConnectOpen(false);
+    } catch (error) {
+      setConnectError(error instanceof Error ? error.message : 'Could not connect to device');
     }
   };
 
@@ -879,6 +1128,52 @@ export const Player: React.FC = () => {
           <IconButton disabled title="Lyrics are not available yet">
             <Mic2 size={16} />
           </IconButton>
+          <ConnectControl ref={connectControlRef}>
+            <ConnectButton
+              className={isConnectActive ? 'connected' : ''}
+              onClick={() => setIsConnectOpen(open => !open)}
+              title={connectButtonTitle}
+            >
+              <Cast size={16} />
+            </ConnectButton>
+            {isConnectOpen && (
+              <ConnectMenu>
+                <ConnectMenuHeader>Connect to a device</ConnectMenuHeader>
+                <ConnectMenuHint>
+                  Send the current queue to another signed-in WaveNode session. This player becomes the remote control.
+                </ConnectMenuHint>
+                {isLoadingSessions && <ConnectMessage>Loading devices...</ConnectMessage>}
+                {connectError && <ConnectMessage>{connectError}</ConnectMessage>}
+                {!isLoadingSessions && activeSessions.length === 0 && (
+                  <ConnectMessage>No other active devices found.</ConnectMessage>
+                )}
+                {!isLoadingSessions && activeSessions.map(session => {
+                  const isThisDevice = session.id === currentSessionId;
+                  const isActiveTarget = connectedPlaybackSessionId === session.id || (isThisDevice && !connectedPlaybackSessionId);
+                  return (
+                    <ConnectDeviceButton
+                      key={session.id}
+                      type="button"
+                      $active={isActiveTarget}
+                      onClick={() => void handleConnectToSession(session)}
+                    >
+                      {isThisDevice ? <Monitor size={20} /> : getDeviceIcon(session)}
+                      <ConnectDeviceText>
+                        <ConnectDeviceName>
+                          {isThisDevice ? 'This device' : displayDeviceName(session)}
+                        </ConnectDeviceName>
+                        <ConnectDeviceMeta>
+                          {isThisDevice
+                            ? 'Current playback device'
+                            : displayDeviceMeta(session)}
+                        </ConnectDeviceMeta>
+                      </ConnectDeviceText>
+                    </ConnectDeviceButton>
+                  );
+                })}
+              </ConnectMenu>
+            )}
+          </ConnectControl>
           <IconButton
             className={isQueueOpen ? 'active' : ''}
             onClick={() => setIsQueueOpen(!isQueueOpen)}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 
@@ -55,6 +56,13 @@ func (h *AuthHandler) AuthMiddleware() func(http.Handler) http.Handler {
 				json.NewEncoder(w).Encode(response)
 				return
 			}
+			h.db.UpdateSessionClientInfo(
+				sessionID,
+				userID,
+				deviceNameFromUserAgent(r.UserAgent()),
+				strings.TrimSpace(r.UserAgent()),
+				clientIPAddress(r),
+			)
 
 			// Add user ID to request context
 			ctx := context.WithValue(r.Context(), "user_id", userID)
@@ -64,6 +72,17 @@ func (h *AuthHandler) AuthMiddleware() func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func clientIPAddress(r *http.Request) string {
+	ipAddress := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		ipAddress = host
+	}
+	if forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0]); forwarded != "" {
+		ipAddress = forwarded
+	}
+	return ipAddress
 }
 
 func isBrowserStreamRequest(r *http.Request) bool {

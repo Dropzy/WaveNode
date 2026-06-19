@@ -46,6 +46,7 @@ type Router struct {
 	autoUpdater       *scanner.AutoUpdater
 	setupToken        string
 	subsonicAuthCache sync.Map
+	playbackHandoffs  sync.Map
 	corsConfig        struct {
 		AllowedOrigins []string `json:"allowed_origins"`
 		AllowedMethods []string `json:"allowed_methods"`
@@ -163,6 +164,8 @@ func (r *Router) SetupRoutes() *mux.Router {
 	protected.HandleFunc("/ratings/{id}", r.setRating).Methods("PUT", "OPTIONS")
 	protected.HandleFunc("/playback-profile", r.getPlaybackProfile).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/playback-profile", r.updatePlaybackProfile).Methods("PUT", "OPTIONS")
+	protected.HandleFunc("/playback/connect", r.createPlaybackHandoff).Methods("POST", "OPTIONS")
+	protected.HandleFunc("/playback/connect/pending", r.consumePlaybackHandoff).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/scrobble/settings", r.getScrobbleSettings).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/scrobble/settings", r.updateScrobbleSettings).Methods("PUT", "OPTIONS")
 	protected.HandleFunc("/scrobble/lastfm/start", r.startLastFMAuth).Methods("POST", "OPTIONS")
@@ -1145,8 +1148,20 @@ func (r *Router) addToRecentlyPlayed(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	source := strings.ToLower(strings.TrimSpace(req.URL.Query().Get("source")))
+	if source == "" {
+		source = "web"
+	}
+	if source != "web" && source != "desktop" && source != "mobile" && source != "subsonic" {
+		source = "web"
+	}
+	device := strings.TrimSpace(req.URL.Query().Get("device"))
+	if len(device) > 80 {
+		device = device[:80]
+	}
+
 	// Add track to their recently played list
-	err = r.db.AddToRecentlyPlayed(userID, trackID)
+	err = r.db.AddToRecentlyPlayedFrom(userID, trackID, source, device)
 	if err != nil {
 		response := map[string]interface{}{
 			"success": false,

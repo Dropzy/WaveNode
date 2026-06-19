@@ -2,10 +2,32 @@ import axios from 'axios'
 import { notifyPlaylistsChanged } from '../utils/playlistEvents'
 
 const configuredApiBaseUrl = (globalThis as { MUSIC_SERVER_API_BASE_URL?: string }).MUSIC_SERVER_API_BASE_URL
+const isWaveNodeDesktop = Boolean(window.WAVENODE_DESKTOP)
+export const DESKTOP_SERVER_STORAGE_KEY = 'wavenode_desktop_server_url'
 
-export const API_BASE_URL = configuredApiBaseUrl || import.meta.env.VITE_API_BASE_URL || '/api'
+export const normalizeServerUrl = (value: string): string => {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return ''
+  }
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`
+  return withProtocol.replace(/\/api\/?$/i, '').replace(/\/+$/, '')
+}
 
-export const API_ORIGIN = new URL(API_BASE_URL, window.location.origin).origin
+export const serverUrlToApiBaseUrl = (serverUrl: string): string => {
+  const normalized = normalizeServerUrl(serverUrl)
+  return normalized ? `${normalized}/api` : ''
+}
+
+const savedDesktopServerUrl = isWaveNodeDesktop ? localStorage.getItem(DESKTOP_SERVER_STORAGE_KEY) || '' : ''
+const savedDesktopApiBaseUrl = savedDesktopServerUrl ? serverUrlToApiBaseUrl(savedDesktopServerUrl) : ''
+
+export let API_BASE_URL = savedDesktopApiBaseUrl || configuredApiBaseUrl || import.meta.env.VITE_API_BASE_URL || '/api'
+
+export let API_ORIGIN = new URL(API_BASE_URL, window.location.origin).origin
+
+const playbackClientSource = isWaveNodeDesktop ? 'desktop' : 'web'
+const playbackClientDevice = isWaveNodeDesktop ? 'WaveNode desktop app' : ''
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -13,6 +35,23 @@ export const api = axios.create({
     'Content-Type': 'application/json',
   },
 })
+
+export const setApiBaseUrl = (baseUrl: string) => {
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '')
+  API_BASE_URL = normalizedBaseUrl
+  API_ORIGIN = new URL(normalizedBaseUrl, window.location.origin).origin
+  api.defaults.baseURL = normalizedBaseUrl
+}
+
+export const setDesktopServerUrl = (serverUrl: string) => {
+  const normalizedServerUrl = normalizeServerUrl(serverUrl)
+  if (!normalizedServerUrl) {
+    throw new Error('Enter a WaveNode server address')
+  }
+  localStorage.setItem(DESKTOP_SERVER_STORAGE_KEY, normalizedServerUrl)
+  setApiBaseUrl(serverUrlToApiBaseUrl(normalizedServerUrl))
+  return normalizedServerUrl
+}
 
 export interface Music {
   id: string
@@ -179,6 +218,18 @@ export interface UserSession {
   created_at: string
   expires_at: string
   revoked_at?: string
+}
+
+export interface PlaybackHandoffCommand {
+  id: string
+  source_session_id: string
+  target_session_id: string
+  track_ids: string[]
+  tracks?: Music[]
+  start_index: number
+  action?: 'play_queue' | 'toggle_play_pause' | 'seek'
+  position_ms?: number
+  created_at: string
 }
 
 export interface ListeningHistoryEntry {
@@ -778,6 +829,29 @@ export const accountAPI = {
   },
 }
 
+export const playbackConnectAPI = {
+  createHandoff: async (
+    targetSessionId: string,
+    trackIds: string[],
+    startIndex: number,
+    positionMs = 0,
+    action: 'play_queue' | 'toggle_play_pause' | 'seek' = 'play_queue',
+  ): Promise<PlaybackHandoffCommand | null> => {
+    const response = await api.post<APIResponse<PlaybackHandoffCommand>>('/playback/connect', {
+      target_session_id: targetSessionId,
+      track_ids: trackIds,
+      start_index: startIndex,
+      position_ms: positionMs,
+      action,
+    })
+    return response.data.data || null
+  },
+  consumePending: async (): Promise<PlaybackHandoffCommand | null> => {
+    const response = await api.get<APIResponse<PlaybackHandoffCommand | null>>('/playback/connect/pending')
+    return response.data.data || null
+  },
+}
+
 export const adminIntegrationsAPI = {
   getLastFM: async (): Promise<LastFMIntegrationSettings> => {
     const response = await api.get<APIResponse<LastFMIntegrationSettings>>('/admin/integrations/lastfm')
@@ -919,7 +993,12 @@ export const recentlyPlayedAPI = {
   },
 
   addRecentlyPlayed: async (trackId: string): Promise<boolean> => {
-    const response = await api.post<APIResponse<null>>(`/recently-played/${trackId}`)
+    const response = await api.post<APIResponse<null>>(`/recently-played/${trackId}`, null, {
+      params: {
+        source: playbackClientSource,
+        ...(playbackClientDevice ? { device: playbackClientDevice } : {}),
+      },
+    })
     return response.data.success
   },
 }

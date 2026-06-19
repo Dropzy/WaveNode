@@ -25,6 +25,7 @@ yarn-error.log*
 dist/
 dist-ssr/
 build/
+release/
 *.exe
 *.exe~
 *.dll
@@ -118,6 +119,7 @@ localhost/
 
 # Android/Gradle local state
 Android/.gradle/
+Android/.kotlin/
 Android/.idea/
 Android/**/build/
 Android/local.properties

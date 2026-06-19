@@ -7,6 +7,7 @@ const backendWebSocketUrl = `ws://127.0.0.1:${backendPort}`
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: './',
   plugins: [react()],
   server: {
     proxy: {

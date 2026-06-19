@@ -23,6 +23,8 @@ WaveNode is a self-hosted music server for streaming a personal music collection
 - Automatic library updates with file-change detection and scheduled rescans
 - Downloadable backups, restore, library diagnostics, and server monitoring
 - Installable web app with playback session recovery and media controls
+- Standalone Electron desktop client with server URL entry and LAN server discovery
+- Native Android client for phone playback and remote device control
 - Account management with administrator-created users
 - Declarative plugins with administrator-managed home-page radio rows
 - PostgreSQL persistence
@@ -61,6 +63,22 @@ See [SUBSONIC.md](SUBSONIC.md) for compatible client setup and supported endpoin
 See [PLUGINS.md](PLUGINS.md) for the plugin manifest format and extension points.
 See [SMART_PLAYLISTS.md](SMART_PLAYLISTS.md) for rule groups and relative-date examples.
 
+## Client Apps
+
+The Docker deployment serves the WaveNode web app at `http://localhost:8080`.
+
+The Electron desktop app is a standalone client for any WaveNode server. It opens with the same login flow as the Android app, lets the user enter a server address, and can discover WaveNode servers on the local network.
+
+```bash
+cd Frontend
+npm ci
+npm run desktop:build
+```
+
+The packaged desktop app is written to `Frontend/release/`.
+
+The Android app lives in `Android/` and connects to an existing WaveNode server by URL or local network discovery.
+
 ## Development
 
 Backend:
@@ -94,7 +112,7 @@ For secure internet access, WaveNode includes an optional Caddy gateway that obt
 
 ## Project Status
 
-WaveNode is preparing its `v0.1.0` release. The web application and Docker deployment are the supported targets; the Android client remains preview software.
+WaveNode is preparing its `v0.1.0` release. Docker/web playback is the primary server release target. The Electron desktop client and Android client are included as companion clients for connecting to an existing WaveNode server.
 
 ## Community
 
