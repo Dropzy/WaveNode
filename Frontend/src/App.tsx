@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { AudioProvider } from './contexts/AudioContext';
@@ -55,23 +55,28 @@ const writeCachedSetupStatus = (status: SetupStatus) => {
 function SetupAwareApp() {
   const [status, setStatus] = useState<SetupStatus | null>(() => readCachedSetupStatus())
   const [error, setError] = useState('')
+  const statusRef = useRef(status)
 
-  const loadStatus = async () => {
+  useEffect(() => {
+    statusRef.current = status
+  }, [status])
+
+  const loadStatus = useCallback(async () => {
     setError('')
     try {
       const nextStatus = await setupAPI.getStatus()
       setStatus(nextStatus)
       writeCachedSetupStatus(nextStatus)
     } catch {
-      if (!status) {
+      if (!statusRef.current) {
         setError('WaveNode could not check whether setup is complete.')
       }
     }
-  }
+  }, [])
 
   useEffect(() => {
     void loadStatus()
-  }, [])
+  }, [loadStatus])
 
   if (error) {
     return (

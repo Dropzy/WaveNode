@@ -448,7 +448,7 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
     audioService.setVolume(clampedVolume);
   };
 
-  const seekTo = (time: number) => {
+  const seekTo = useCallback((time: number) => {
     const targetSessionId = connectedPlaybackSessionIdRef.current;
     if (targetSessionId) {
       setCurrentTime(time);
@@ -463,7 +463,7 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
 
     setControlledByPlaybackSessionId(null);
     audioService.seekTo(time);
-  };
+  }, [isPlaying, sendPlaybackCommand, startRemoteProgressClock]);
 
   const nextTrack = useCallback(() => {
     if (playlistQueue.length === 0) {
@@ -546,7 +546,7 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
         }
       });
     }
-  }, [currentTrackIndex, playRemoteQueue, playTrack, playlistQueue]);
+  }, [currentTrackIndex, playRemoteQueue, playTrack, playlistQueue, seekTo]);
 
   const playPlaylist = (tracks: Music[]) => {
     if (tracks.length > 0) {
@@ -688,7 +688,7 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [authLoading, playLocalFromQueueAt, token, user]);
+  }, [authLoading, playLocalFromQueueAt, stopRemoteProgressClock, token, user]);
 
   const playPlaylistShuffled = (tracks: Music[]) => {
     if (tracks.length > 0) {
