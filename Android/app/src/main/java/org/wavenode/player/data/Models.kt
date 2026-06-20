@@ -105,6 +105,19 @@ data class Playlist(
     val id: String = "",
     val name: String = "",
     val description: String = "",
+    @SerialName("image_url")
+    val imageUrl: String = "",
+    val type: String = "manual",
+    @SerialName("track_ids")
+    val trackIds: List<String> = emptyList(),
+)
+
+@Serializable
+data class PlaylistRequest(
+    val name: String,
+    val description: String = "",
+    @SerialName("image_url")
+    val imageUrl: String = "",
     val type: String = "manual",
     @SerialName("track_ids")
     val trackIds: List<String> = emptyList(),
@@ -169,6 +182,12 @@ data class PlaybackHandoffRequest(
 data class PlaylistTrackRequest(
     @SerialName("track_id")
     val trackId: String,
+)
+
+@Serializable
+data class PlaylistTracksRequest(
+    @SerialName("track_ids")
+    val trackIds: List<String>,
 )
 
 @Serializable

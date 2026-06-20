@@ -594,6 +594,7 @@ func (db *DB) createTables() error {
 		user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 		name VARCHAR(255) NOT NULL,
 		description TEXT,
+		image_url TEXT DEFAULT '',
 		track_ids JSONB,
 		playlist_type VARCHAR(20) NOT NULL DEFAULT 'manual',
 		smart_rules JSONB,
@@ -603,6 +604,9 @@ func (db *DB) createTables() error {
 
 	if _, err := db.conn.Exec(playlistsTable); err != nil {
 		return fmt.Errorf("failed to create playlists table: %v", err)
+	}
+	if _, err := db.conn.Exec(`ALTER TABLE playlists ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT ''`); err != nil {
+		return fmt.Errorf("failed to migrate playlist images: %v", err)
 	}
 
 	// Create liked_tracks table

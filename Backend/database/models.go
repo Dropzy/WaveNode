@@ -133,6 +133,7 @@ type Playlist struct {
 	UserID      string              `json:"user_id"`
 	Name        string              `json:"name"`
 	Description string              `json:"description"`
+	ImageURL    string              `json:"image_url"`
 	Type        string              `json:"type"`
 	SmartRules  *SmartPlaylistRules `json:"smart_rules,omitempty"`
 	TrackIDs    []string            `json:"track_ids"`

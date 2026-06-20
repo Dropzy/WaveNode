@@ -50,7 +50,7 @@ func (db *DB) GetUserPlaylists(userID string) ([]Playlist, error) {
 }
 
 func (db *DB) getPlaylists(userID string) ([]Playlist, error) {
-	query := `SELECT id, user_id, name, description, playlist_type, smart_rules, track_ids, created_at, updated_at FROM playlists`
+	query := `SELECT id, user_id, name, description, image_url, playlist_type, smart_rules, track_ids, created_at, updated_at FROM playlists`
 	args := []interface{}{}
 	if userID != "" {
 		query += ` WHERE user_id = $1`
@@ -70,7 +70,7 @@ func (db *DB) getPlaylists(userID string) ([]Playlist, error) {
 		var smartRulesJSON []byte
 		var trackIDsJSON []byte
 
-		err := rows.Scan(&playlist.ID, &playlist.UserID, &playlist.Name, &playlist.Description, &playlist.Type, &smartRulesJSON, &trackIDsJSON, &playlist.CreatedAt, &playlist.UpdatedAt)
+		err := rows.Scan(&playlist.ID, &playlist.UserID, &playlist.Name, &playlist.Description, &playlist.ImageURL, &playlist.Type, &smartRulesJSON, &trackIDsJSON, &playlist.CreatedAt, &playlist.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan playlist row: %v", err)
 		}
@@ -110,7 +110,7 @@ func (db *DB) GetUserPlaylist(id, userID string) (*Playlist, error) {
 }
 
 func (db *DB) getPlaylist(id, userID string) (*Playlist, error) {
-	query := `SELECT id, user_id, name, description, playlist_type, smart_rules, track_ids, created_at, updated_at FROM playlists WHERE id = $1`
+	query := `SELECT id, user_id, name, description, image_url, playlist_type, smart_rules, track_ids, created_at, updated_at FROM playlists WHERE id = $1`
 	args := []interface{}{id}
 	if userID != "" {
 		query += ` AND user_id = $2`
@@ -121,7 +121,7 @@ func (db *DB) getPlaylist(id, userID string) (*Playlist, error) {
 	var smartRulesJSON []byte
 	var trackIDsJSON []byte
 
-	err := db.conn.QueryRow(query, args...).Scan(&playlist.ID, &playlist.UserID, &playlist.Name, &playlist.Description, &playlist.Type, &smartRulesJSON, &trackIDsJSON, &playlist.CreatedAt, &playlist.UpdatedAt)
+	err := db.conn.QueryRow(query, args...).Scan(&playlist.ID, &playlist.UserID, &playlist.Name, &playlist.Description, &playlist.ImageURL, &playlist.Type, &smartRulesJSON, &trackIDsJSON, &playlist.CreatedAt, &playlist.UpdatedAt)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -218,8 +218,8 @@ func (db *DB) AddPlaylist(playlist *Playlist) error {
 	}
 
 	query := `
-		INSERT INTO playlists (id, user_id, name, description, playlist_type, smart_rules, track_ids, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO playlists (id, user_id, name, description, image_url, playlist_type, smart_rules, track_ids, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
 	trackIDsJSON, err := marshalTrackIDs(playlist.TrackIDs)
@@ -237,7 +237,7 @@ func (db *DB) AddPlaylist(playlist *Playlist) error {
 		smartRulesJSON = encodedRules
 	}
 
-	_, err = db.conn.Exec(query, playlist.ID, playlist.UserID, playlist.Name, playlist.Description, playlist.Type, smartRulesJSON, trackIDsJSON, playlist.CreatedAt, playlist.UpdatedAt)
+	_, err = db.conn.Exec(query, playlist.ID, playlist.UserID, playlist.Name, playlist.Description, playlist.ImageURL, playlist.Type, smartRulesJSON, trackIDsJSON, playlist.CreatedAt, playlist.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to create playlist: %v", err)
 	}
@@ -260,11 +260,12 @@ func (db *DB) UpdatePlaylist(playlist *Playlist) error {
 		UPDATE playlists SET 
 			name = $2, 
 			description = $3, 
-			playlist_type = $4,
-			smart_rules = $5,
-			track_ids = $6,
-			updated_at = $7
-		WHERE id = $1 AND user_id = $8
+			image_url = $4,
+			playlist_type = $5,
+			smart_rules = $6,
+			track_ids = $7,
+			updated_at = $8
+		WHERE id = $1 AND user_id = $9
 	`
 
 	playlist.UpdatedAt = time.Now()
@@ -283,7 +284,7 @@ func (db *DB) UpdatePlaylist(playlist *Playlist) error {
 		smartRulesJSON = encodedRules
 	}
 
-	result, err := db.conn.Exec(query, playlist.ID, playlist.Name, playlist.Description, playlist.Type, smartRulesJSON, trackIDsJSON, playlist.UpdatedAt, playlist.UserID)
+	result, err := db.conn.Exec(query, playlist.ID, playlist.Name, playlist.Description, playlist.ImageURL, playlist.Type, smartRulesJSON, trackIDsJSON, playlist.UpdatedAt, playlist.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to update playlist: %v", err)
 	}
@@ -436,7 +437,7 @@ func getPlaylistForUpdate(tx *sql.Tx, playlistID, userID string) (*Playlist, err
 	var trackIDsJSON []byte
 
 	err := tx.QueryRow(`
-		SELECT id, user_id, name, description, playlist_type, smart_rules, track_ids, created_at, updated_at
+		SELECT id, user_id, name, description, image_url, playlist_type, smart_rules, track_ids, created_at, updated_at
 		FROM playlists
 		WHERE id = $1 AND user_id = $2
 		FOR UPDATE
@@ -445,6 +446,7 @@ func getPlaylistForUpdate(tx *sql.Tx, playlistID, userID string) (*Playlist, err
 		&playlist.UserID,
 		&playlist.Name,
 		&playlist.Description,
+		&playlist.ImageURL,
 		&playlist.Type,
 		&smartRulesJSON,
 		&trackIDsJSON,

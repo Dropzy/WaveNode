@@ -247,13 +247,145 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
         _state.value = _state.value.copy(activeDetail = null, isDetailLoading = false, detailError = null)
     }
 
-    fun addTrackToPlaylist(track: Track, playlist: Playlist) {
+    fun createPlaylist(name: String, description: String) {
         val session = _state.value.session ?: return
-        if (track.id.isBlank() || track.isExternal || playlist.id.isBlank() || playlist.type == "smart") {
+        val trimmedName = name.trim()
+        if (trimmedName.isBlank()) {
+            _state.value = _state.value.copy(error = "Playlist name is required")
             return
         }
         viewModelScope.launch {
-            runCatching { api.addTrackToPlaylist(session, playlist.id, track.id) }
+            runCatching { api.createPlaylist(session, trimmedName, description.trim()) }
+                .onSuccess { playlist ->
+                    _state.value = _state.value.copy(
+                        playlists = _state.value.playlists + playlist,
+                        error = null,
+                    )
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(error = error.message ?: "Could not create playlist")
+                }
+        }
+    }
+
+    fun createPlaylistWithTracks(name: String, description: String, tracks: List<Track>) {
+        val session = _state.value.session ?: return
+        val trimmedName = name.trim()
+        val validTracks = tracks
+            .filter { it.id.isNotBlank() && !it.isExternal }
+            .distinctBy { it.id }
+        if (trimmedName.isBlank()) {
+            _state.value = _state.value.copy(error = "Playlist name is required")
+            return
+        }
+        viewModelScope.launch {
+            runCatching {
+                val playlist = api.createPlaylist(session, trimmedName, description.trim())
+                if (validTracks.isEmpty()) {
+                    playlist
+                } else {
+                    api.addTracksToPlaylist(session, playlist.id, validTracks.map { it.id })
+                }
+            }
+                .onSuccess { playlist ->
+                    _state.value = _state.value.copy(
+                        playlists = _state.value.playlists + playlist,
+                        error = null,
+                    )
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(error = error.message ?: "Could not create playlist")
+                }
+        }
+    }
+
+    fun updatePlaylist(playlist: Playlist) {
+        val session = _state.value.session ?: return
+        if (playlist.id.isBlank() || playlist.name.trim().isBlank()) {
+            _state.value = _state.value.copy(error = "Playlist name is required")
+            return
+        }
+        if (playlist.type == "smart") {
+            _state.value = _state.value.copy(error = "Smart playlists are edited from the smart playlist editor")
+            return
+        }
+        viewModelScope.launch {
+            runCatching { api.updatePlaylist(session, playlist.copy(name = playlist.name.trim(), description = playlist.description.trim())) }
+                .onSuccess { updatedPlaylist ->
+                    val current = _state.value
+                    val updatedDetail = when (val detail = current.activeDetail) {
+                        is LibraryDetail.PlaylistPage -> {
+                            if (detail.playlist.id == updatedPlaylist.id) {
+                                val tracksById = detail.tracks.associateBy { it.id }
+                                detail.copy(
+                                    playlist = updatedPlaylist,
+                                    tracks = updatedPlaylist.trackIds.mapNotNull { tracksById[it] },
+                                )
+                            } else {
+                                detail
+                            }
+                        }
+                        else -> detail
+                    }
+                    _state.value = current.copy(
+                        playlists = current.playlists.map { if (it.id == updatedPlaylist.id) updatedPlaylist else it },
+                        activeDetail = updatedDetail,
+                        detailError = null,
+                        error = null,
+                    )
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(error = error.message ?: "Could not update playlist")
+                }
+        }
+    }
+
+    fun deletePlaylist(playlist: Playlist) {
+        val session = _state.value.session ?: return
+        if (playlist.id.isBlank()) {
+            return
+        }
+        viewModelScope.launch {
+            runCatching { api.deletePlaylist(session, playlist.id) }
+                .onSuccess {
+                    val current = _state.value
+                    val updatedDetail = when (val detail = current.activeDetail) {
+                        is LibraryDetail.PlaylistPage -> if (detail.playlist.id == playlist.id) null else detail
+                        else -> current.activeDetail
+                    }
+                    _state.value = current.copy(
+                        playlists = current.playlists.filterNot { it.id == playlist.id },
+                        activeDetail = updatedDetail,
+                        detailError = null,
+                        error = null,
+                    )
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(error = error.message ?: "Could not delete playlist")
+                }
+        }
+    }
+
+    fun addTrackToPlaylist(track: Track, playlist: Playlist) {
+        addTracksToPlaylist(listOf(track), playlist)
+    }
+
+    fun addTracksToPlaylist(tracks: List<Track>, playlist: Playlist) {
+        val session = _state.value.session ?: return
+        val validTracks = tracks
+            .filter { it.id.isNotBlank() && !it.isExternal }
+            .distinctBy { it.id }
+        if (validTracks.isEmpty() || playlist.id.isBlank() || playlist.type == "smart") {
+            return
+        }
+        viewModelScope.launch {
+            runCatching {
+                if (validTracks.size == 1) {
+                    api.addTrackToPlaylist(session, playlist.id, validTracks.first().id)
+                } else {
+                    api.addTracksToPlaylist(session, playlist.id, validTracks.map { it.id })
+                }
+            }
                 .onSuccess { updatedPlaylist ->
                     val current = _state.value
                     val updatedPlaylists = current.playlists.map {
@@ -261,10 +393,12 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                     }
                     val updatedDetail = when (val detail = current.activeDetail) {
                         is LibraryDetail.PlaylistPage -> {
-                            if (detail.playlist.id == updatedPlaylist.id && detail.tracks.none { it.id == track.id }) {
-                                detail.copy(playlist = updatedPlaylist, tracks = detail.tracks + track)
-                            } else if (detail.playlist.id == updatedPlaylist.id) {
-                                detail.copy(playlist = updatedPlaylist)
+                            if (detail.playlist.id == updatedPlaylist.id) {
+                                val existingIds = detail.tracks.map { it.id }.toSet()
+                                detail.copy(
+                                    playlist = updatedPlaylist,
+                                    tracks = detail.tracks + validTracks.filter { it.id !in existingIds },
+                                )
                             } else {
                                 detail
                             }
@@ -279,7 +413,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                     )
                 }
                 .onFailure { error ->
-                    _state.value = _state.value.copy(error = error.message ?: "Could not add track to playlist")
+                    _state.value = _state.value.copy(error = error.message ?: "Could not add tracks to playlist")
                 }
         }
     }

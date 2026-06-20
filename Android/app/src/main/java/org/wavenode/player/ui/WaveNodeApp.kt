@@ -6,7 +6,9 @@ import android.content.pm.PackageManager
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -26,18 +28,24 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Home
@@ -50,6 +58,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
@@ -76,6 +85,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -98,6 +108,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import kotlin.random.Random
 import java.time.Instant
@@ -114,14 +126,27 @@ import org.wavenode.player.data.Track
 import org.wavenode.player.data.UserSession
 import org.wavenode.player.playback.PlayerState
 import org.wavenode.player.playback.WaveRepeatMode
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 private enum class WaveTab(val label: String, val icon: ImageVector) {
     Home("Home", Icons.Default.Home),
-    Tracks("Tracks", Icons.Default.LibraryMusic),
-    Playlists("Playlists", Icons.AutoMirrored.Filled.PlaylistPlay),
-    Albums("Albums", Icons.Default.Album),
-    Artists("Artists", Icons.Default.Groups),
-    Radio("Radio", Icons.Default.Radio),
+    Search("Search", Icons.Default.Search),
+    Library("Library", Icons.Default.LibraryMusic),
+    Create("Create", Icons.Default.Add),
+}
+
+private enum class LibraryFilter(val label: String) {
+    Playlists("Playlists"),
+    Albums("Albums"),
+    Artists("Artists"),
+    Tracks("Tracks"),
+    Radio("Radio"),
+}
+
+private enum class LibrarySortOption(val label: String) {
+    Recents("Recents"),
+    Name("Name"),
 }
 
 private enum class TrackSortOption(val label: String) {
@@ -154,7 +179,11 @@ fun WaveNodeApp(
     onSeekTo: (Long) -> Unit,
     onRefreshConnectSessions: () -> Unit,
     onConnectPlaybackTo: (String) -> Unit,
-    onAddTrackToPlaylist: (Track, Playlist) -> Unit,
+    onAddTracksToPlaylist: (List<Track>, Playlist) -> Unit,
+    onCreatePlaylist: (String, String) -> Unit,
+    onCreatePlaylistWithTracks: (String, String, List<Track>) -> Unit,
+    onUpdatePlaylist: (Playlist) -> Unit,
+    onDeletePlaylist: (Playlist) -> Unit,
     trackArtworkUrl: (Track) -> String?,
     albumArtworkUrl: (Album) -> String?,
     artistArtworkUrl: (Artist) -> String?,
@@ -188,7 +217,11 @@ fun WaveNodeApp(
             onSeekTo = onSeekTo,
             onRefreshConnectSessions = onRefreshConnectSessions,
             onConnectPlaybackTo = onConnectPlaybackTo,
-            onAddTrackToPlaylist = onAddTrackToPlaylist,
+            onAddTracksToPlaylist = onAddTracksToPlaylist,
+            onCreatePlaylist = onCreatePlaylist,
+            onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
+            onUpdatePlaylist = onUpdatePlaylist,
+            onDeletePlaylist = onDeletePlaylist,
             trackArtworkUrl = trackArtworkUrl,
             albumArtworkUrl = albumArtworkUrl,
             artistArtworkUrl = artistArtworkUrl,
@@ -374,13 +407,19 @@ private fun MainShell(
     onSeekTo: (Long) -> Unit,
     onRefreshConnectSessions: () -> Unit,
     onConnectPlaybackTo: (String) -> Unit,
-    onAddTrackToPlaylist: (Track, Playlist) -> Unit,
+    onAddTracksToPlaylist: (List<Track>, Playlist) -> Unit,
+    onCreatePlaylist: (String, String) -> Unit,
+    onCreatePlaylistWithTracks: (String, String, List<Track>) -> Unit,
+    onUpdatePlaylist: (Playlist) -> Unit,
+    onDeletePlaylist: (Playlist) -> Unit,
     trackArtworkUrl: (Track) -> String?,
     albumArtworkUrl: (Album) -> String?,
     artistArtworkUrl: (Artist) -> String?,
 ) {
     var activeTab by remember { mutableStateOf(WaveTab.Home) }
     var searchQuery by remember { mutableStateOf("") }
+    var libraryFilter by remember { mutableStateOf(LibraryFilter.Playlists) }
+    var librarySort by remember { mutableStateOf(LibrarySortOption.Recents) }
     var showQueue by remember { mutableStateOf(false) }
     var showNowPlaying by remember { mutableStateOf(false) }
     var showAccountSheet by remember { mutableStateOf(false) }
@@ -412,6 +451,10 @@ private fun MainShell(
         if (state.tracks.isEmpty() && !state.isLoading) {
             onRefresh()
         }
+    }
+
+    BackHandler(enabled = state.activeDetail != null) {
+        onCloseDetail()
     }
 
     Scaffold(
@@ -493,12 +536,12 @@ private fun MainShell(
                 .padding(padding)
                 .fillMaxSize(),
         ) {
-            if (state.activeDetail == null) {
+            if (state.activeDetail == null && activeTab == WaveTab.Search) {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    placeholder = { Text("Search WaveNode") },
+                    placeholder = { Text("What do you want to listen to?") },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -530,11 +573,14 @@ private fun MainShell(
             if (detail != null) {
                 LibraryDetailScreen(
                     detail = detail,
+                    allTracks = state.tracks,
                     playerState = playerState,
-                    onBack = onCloseDetail,
                     onPlayFromHere = onPlayFromHere,
                     playlists = state.playlists,
-                    onAddTrackToPlaylist = onAddTrackToPlaylist,
+                    onAddTracksToPlaylist = onAddTracksToPlaylist,
+                    onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
+                    onUpdatePlaylist = onUpdatePlaylist,
+                    onDeletePlaylist = onDeletePlaylist,
                     trackArtworkUrl = trackArtworkUrl,
                     albumArtworkUrl = albumArtworkUrl,
                     artistArtworkUrl = artistArtworkUrl,
@@ -543,54 +589,61 @@ private fun MainShell(
             } else when (activeTab) {
                 WaveTab.Home -> HomeScreen(
                     state = state,
-                    recentTracks = filteredTracks.take(8),
-                    featuredAlbums = filteredAlbums.take(10),
-                    pluginRows = filteredPluginRows,
+                    recentTracks = state.tracks.take(8),
+                    featuredAlbums = state.albums.take(10),
+                    pluginRows = state.pluginRows,
                     onPlayFromHere = onPlayFromHere,
                     onOpenAlbum = onOpenAlbum,
                     playlists = state.playlists,
-                    onAddTrackToPlaylist = onAddTrackToPlaylist,
+                    onAddTracksToPlaylist = onAddTracksToPlaylist,
+                    onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
                     trackArtworkUrl = trackArtworkUrl,
                     albumArtworkUrl = albumArtworkUrl,
                 )
-                WaveTab.Tracks -> TracksScreen(
+                WaveTab.Search -> SearchScreen(
                     tracks = filteredTracks,
+                    albums = filteredAlbums,
+                    artists = filteredArtists,
+                    matchingPlaylists = filteredPlaylists,
+                    pluginRows = filteredPluginRows,
                     playerState = playerState,
                     onPlayFromHere = onPlayFromHere,
-                    playlists = state.playlists,
-                    onAddTrackToPlaylist = onAddTrackToPlaylist,
+                    onOpenAlbum = onOpenAlbum,
+                    onOpenArtist = onOpenArtist,
+                    onOpenPlaylist = onOpenPlaylist,
+                    addToPlaylists = state.playlists,
+                    onAddTracksToPlaylist = onAddTracksToPlaylist,
+                    onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
                     trackArtworkUrl = trackArtworkUrl,
+                    albumArtworkUrl = albumArtworkUrl,
+                    artistArtworkUrl = artistArtworkUrl,
                     emptyMessage = emptyMessage("tracks", searchQuery),
                 )
-                WaveTab.Albums -> AlbumsScreen(
-                    albums = filteredAlbums,
+                WaveTab.Library -> LibraryScreen(
+                    selectedFilter = libraryFilter,
+                    selectedSort = librarySort,
+                    onFilterSelected = { libraryFilter = it },
+                    onSortSelected = { librarySort = it },
                     tracks = state.tracks,
-                    albumArtworkUrl = albumArtworkUrl,
-                    trackArtworkUrl = trackArtworkUrl,
-                    onOpenAlbum = onOpenAlbum,
-                    emptyMessage = emptyMessage("albums", searchQuery),
-                )
-                WaveTab.Playlists -> PlaylistsScreen(
-                    playlists = filteredPlaylists,
-                    onOpenPlaylist = onOpenPlaylist,
-                    emptyMessage = emptyMessage("playlists", searchQuery),
-                )
-                WaveTab.Artists -> ArtistsScreen(
-                    artists = filteredArtists,
-                    tracks = state.tracks,
-                    artistArtworkUrl = artistArtworkUrl,
-                    trackArtworkUrl = trackArtworkUrl,
-                    onOpenArtist = onOpenArtist,
-                    emptyMessage = emptyMessage("artists", searchQuery),
-                )
-                WaveTab.Radio -> RadioScreen(
-                    rows = filteredPluginRows,
+                    albums = state.albums,
+                    artists = state.artists,
+                    playlists = state.playlists,
+                    pluginRows = state.pluginRows,
+                    playerState = playerState,
                     onPlayFromHere = onPlayFromHere,
-                    emptyMessage = if (searchQuery.isBlank()) {
-                        "No enabled radio plugins found."
-                    } else {
-                        "No radio stations match \"$searchQuery\"."
-                    },
+                    onOpenAlbum = onOpenAlbum,
+                    onOpenArtist = onOpenArtist,
+                    onOpenPlaylist = onOpenPlaylist,
+                    onOpenSearch = { activeTab = WaveTab.Search },
+                    onOpenCreate = { activeTab = WaveTab.Create },
+                    onAddTracksToPlaylist = onAddTracksToPlaylist,
+                    onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
+                    trackArtworkUrl = trackArtworkUrl,
+                    albumArtworkUrl = albumArtworkUrl,
+                    artistArtworkUrl = artistArtworkUrl,
+                )
+                WaveTab.Create -> CreateScreen(
+                    onCreatePlaylist = onCreatePlaylist,
                 )
             }
         }
@@ -602,7 +655,8 @@ private fun MainShell(
             onDismiss = { showQueue = false },
             onPlayTrack = onPlayQueueTrack,
             playlists = state.playlists,
-            onAddTrackToPlaylist = onAddTrackToPlaylist,
+            onAddTracksToPlaylist = onAddTracksToPlaylist,
+            onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
             trackArtworkUrl = trackArtworkUrl,
         )
     }
@@ -766,10 +820,16 @@ private fun HomeScreen(
     onPlayFromHere: (Track, List<Track>) -> Unit,
     onOpenAlbum: (Album) -> Unit,
     playlists: List<Playlist>,
-    onAddTrackToPlaylist: (Track, Playlist) -> Unit,
+    onAddTracksToPlaylist: (List<Track>, Playlist) -> Unit,
+    onCreatePlaylistWithTracks: (String, String, List<Track>) -> Unit,
     trackArtworkUrl: (Track) -> String?,
     albumArtworkUrl: (Album) -> String?,
 ) {
+    var selectedTrackIds by remember(recentTracks) { mutableStateOf<Set<String>>(emptySet()) }
+    val selectedTracks = remember(recentTracks, selectedTrackIds) {
+        recentTracks.filter { it.id in selectedTrackIds }
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -834,11 +894,425 @@ private fun HomeScreen(
                     isCurrent = false,
                     artworkUrl = trackArtworkUrl(track),
                     playlists = playlists,
+                    isSelected = track.id in selectedTrackIds,
+                    selectionActive = selectedTrackIds.isNotEmpty(),
+                    actionTracks = if (track.id in selectedTrackIds) selectedTracks else listOf(track),
+                    onToggleSelected = { selectedTrackIds = selectedTrackIds.toggleTrack(track.id) },
                     onClick = { onPlayFromHere(track, recentTracks) },
-                    onAddToPlaylist = onAddTrackToPlaylist,
+                    onAddTracksToPlaylist = onAddTracksToPlaylist,
+                    onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun SearchScreen(
+    tracks: List<Track>,
+    albums: List<Album>,
+    artists: List<Artist>,
+    matchingPlaylists: List<Playlist>,
+    pluginRows: List<PluginHomeRow>,
+    playerState: PlayerState,
+    onPlayFromHere: (Track, List<Track>) -> Unit,
+    onOpenAlbum: (Album) -> Unit,
+    onOpenArtist: (Artist) -> Unit,
+    onOpenPlaylist: (Playlist) -> Unit,
+    addToPlaylists: List<Playlist>,
+    onAddTracksToPlaylist: (List<Track>, Playlist) -> Unit,
+    onCreatePlaylistWithTracks: (String, String, List<Track>) -> Unit,
+    trackArtworkUrl: (Track) -> String?,
+    albumArtworkUrl: (Album) -> String?,
+    artistArtworkUrl: (Artist) -> String?,
+    emptyMessage: String,
+) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { SectionHeader("Search Results") }
+        if (tracks.isEmpty() && albums.isEmpty() && artists.isEmpty() && matchingPlaylists.isEmpty() && pluginRows.all { it.items.isEmpty() }) {
+            item { EmptyLibraryMessage(emptyMessage) }
+        }
+        if (tracks.isNotEmpty()) {
+            item { SectionHeader("Songs", "${tracks.size}") }
+            items(tracks.take(12), key = { it.id }) { track ->
+                TrackRow(
+                    track = track,
+                    isCurrent = playerState.currentTrack?.id == track.id,
+                    artworkUrl = trackArtworkUrl(track),
+                    playlists = addToPlaylists,
+                    onClick = { onPlayFromHere(track, tracks) },
+                    onAddTracksToPlaylist = onAddTracksToPlaylist,
+                    onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
+                )
+            }
+        }
+        if (matchingPlaylists.isNotEmpty()) {
+            item { SectionHeader("Playlists", "${matchingPlaylists.size}") }
+            items(matchingPlaylists.take(8), key = { it.id.ifBlank { it.name } }) { playlist ->
+                PlaylistLibraryRow(
+                    playlist = playlist,
+                    tracks = tracks,
+                    trackArtworkUrl = trackArtworkUrl,
+                    onClick = { onOpenPlaylist(playlist) },
+                )
+            }
+        }
+        if (albums.isNotEmpty()) {
+            item { SectionHeader("Albums", "${albums.size}") }
+            items(albums.take(8), key = { it.id.ifBlank { it.name } }) { album ->
+                LibraryAlbumRow(album, tracks, albumArtworkUrl, trackArtworkUrl) { onOpenAlbum(album) }
+            }
+        }
+        if (artists.isNotEmpty()) {
+            item { SectionHeader("Artists", "${artists.size}") }
+            items(artists.take(8), key = { it.id.ifBlank { it.name } }) { artist ->
+                LibraryArtistRow(artist, tracks, artistArtworkUrl, trackArtworkUrl) { onOpenArtist(artist) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryScreen(
+    selectedFilter: LibraryFilter,
+    selectedSort: LibrarySortOption,
+    onFilterSelected: (LibraryFilter) -> Unit,
+    onSortSelected: (LibrarySortOption) -> Unit,
+    tracks: List<Track>,
+    albums: List<Album>,
+    artists: List<Artist>,
+    playlists: List<Playlist>,
+    pluginRows: List<PluginHomeRow>,
+    playerState: PlayerState,
+    onPlayFromHere: (Track, List<Track>) -> Unit,
+    onOpenAlbum: (Album) -> Unit,
+    onOpenArtist: (Artist) -> Unit,
+    onOpenPlaylist: (Playlist) -> Unit,
+    onOpenSearch: () -> Unit,
+    onOpenCreate: () -> Unit,
+    onAddTracksToPlaylist: (List<Track>, Playlist) -> Unit,
+    onCreatePlaylistWithTracks: (String, String, List<Track>) -> Unit,
+    trackArtworkUrl: (Track) -> String?,
+    albumArtworkUrl: (Album) -> String?,
+    artistArtworkUrl: (Artist) -> String?,
+) {
+    val visiblePlaylists = remember(playlists, selectedSort) {
+        if (selectedSort == LibrarySortOption.Name) playlists.sortedByText { it.name } else playlists
+    }
+    val visibleAlbums = remember(albums, selectedSort) {
+        if (selectedSort == LibrarySortOption.Name) albums.sortedByText { it.name } else albums
+    }
+    val visibleArtists = remember(artists, selectedSort) {
+        if (selectedSort == LibrarySortOption.Name) artists.sortedByText { it.name } else artists
+    }
+    val visibleTracks = remember(tracks, selectedSort) {
+        if (selectedSort == LibrarySortOption.Name) tracks.sortedFor(TrackSortOption.Title) else tracks.sortedFor(TrackSortOption.RecentlyUploaded)
+    }
+    val visibleRadioRows = remember(pluginRows, selectedSort) {
+        if (selectedSort == LibrarySortOption.Name) {
+            pluginRows.map { row -> row.copy(items = row.items.sortedByText { it.title }) }
+        } else {
+            pluginRows
+        }
+    }
+
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        item {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    WaveNodeMark(size = 36)
+                    Text("Your Library", color = WaveText, fontSize = 30.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onOpenSearch) {
+                        Icon(Icons.Default.Search, contentDescription = "Search", tint = WaveText, modifier = Modifier.size(30.dp))
+                    }
+                    IconButton(onClick = onOpenCreate) {
+                        Icon(Icons.Default.Add, contentDescription = "Create", tint = WaveText, modifier = Modifier.size(32.dp))
+                    }
+                }
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(LibraryFilter.entries, key = { it.name }) { filter ->
+                        FilterChip(
+                            label = filter.label,
+                            selected = selectedFilter == filter,
+                            onClick = { onFilterSelected(filter) },
+                        )
+                    }
+                }
+                LibrarySortRow(
+                    selectedSort = selectedSort,
+                    onSortSelected = onSortSelected,
+                )
+            }
+        }
+
+        when (selectedFilter) {
+            LibraryFilter.Playlists -> {
+                if (visiblePlaylists.isEmpty()) item { EmptyLibraryMessage("No playlists found on this server.") }
+                items(visiblePlaylists, key = { it.id.ifBlank { it.name } }) { playlist ->
+                    PlaylistLibraryRow(playlist, tracks, trackArtworkUrl) { onOpenPlaylist(playlist) }
+                }
+            }
+            LibraryFilter.Albums -> {
+                if (visibleAlbums.isEmpty()) item { EmptyLibraryMessage("No albums found on this server.") }
+                items(visibleAlbums, key = { it.id.ifBlank { it.name } }) { album ->
+                    LibraryAlbumRow(album, tracks, albumArtworkUrl, trackArtworkUrl) { onOpenAlbum(album) }
+                }
+            }
+            LibraryFilter.Artists -> {
+                if (visibleArtists.isEmpty()) item { EmptyLibraryMessage("No artists found on this server.") }
+                items(visibleArtists, key = { it.id.ifBlank { it.name } }) { artist ->
+                    LibraryArtistRow(artist, tracks, artistArtworkUrl, trackArtworkUrl) { onOpenArtist(artist) }
+                }
+            }
+            LibraryFilter.Tracks -> {
+                if (visibleTracks.isEmpty()) item { EmptyLibraryMessage("No tracks found on this server.") }
+                items(visibleTracks, key = { it.id }) { track ->
+                    TrackRow(
+                        track = track,
+                        isCurrent = playerState.currentTrack?.id == track.id,
+                        artworkUrl = trackArtworkUrl(track),
+                        playlists = playlists,
+                        onClick = { onPlayFromHere(track, visibleTracks) },
+                        onAddTracksToPlaylist = onAddTracksToPlaylist,
+                        onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
+                    )
+                }
+            }
+            LibraryFilter.Radio -> {
+                if (visibleRadioRows.all { it.items.isEmpty() }) item { EmptyLibraryMessage("No enabled radio plugins found.") }
+                visibleRadioRows.forEach { row ->
+                    item { SectionHeader(row.title.ifBlank { "Stations" }, row.subtitle.takeIf { it.isNotBlank() }) }
+                    items(row.items, key = { "${row.pluginId}:${it.id}" }) { item ->
+                        val rowTracks = row.items.map { pluginItemToTrack(row.pluginId, it) }
+                        RadioLibraryRow(item) { onPlayFromHere(pluginItemToTrack(row.pluginId, item), rowTracks) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CreateScreen(onCreatePlaylist: (String, String) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text("Create", color = WaveText, fontSize = 30.sp, fontWeight = FontWeight.Black)
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Playlist name") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = { Text("Description") },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Button(
+            onClick = {
+                onCreatePlaylist(name, description)
+                name = ""
+                description = ""
+            },
+            enabled = name.isNotBlank(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Default.Add, contentDescription = null)
+            Text("Create playlist")
+        }
+    }
+}
+
+@Composable
+private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(if (selected) WaveAccent else WaveSurfaceRaised)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (selected) {
+            Icon(Icons.Default.Check, contentDescription = null, tint = WaveBackground, modifier = Modifier.size(16.dp))
+        }
+        Text(
+            text = label,
+            color = if (selected) WaveBackground else WaveText,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun LibrarySortRow(
+    selectedSort: LibrarySortOption,
+    onSortSelected: (LibrarySortOption) -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(WaveSurfaceRaised)
+                .padding(11.dp),
+        ) {
+            Icon(Icons.Default.FilterList, contentDescription = null, tint = WaveText, modifier = Modifier.size(22.dp))
+        }
+        Box(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .clickable { menuOpen = true }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null, tint = WaveText, modifier = Modifier.size(20.dp))
+                Text(selectedSort.label, color = WaveText, fontWeight = FontWeight.Bold)
+            }
+            DropdownMenu(
+                expanded = menuOpen,
+                onDismissRequest = { menuOpen = false },
+                modifier = Modifier.background(WaveSurface),
+            ) {
+                LibrarySortOption.entries.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option.label, color = WaveText) },
+                        onClick = {
+                            onSortSelected(option)
+                            menuOpen = false
+                        },
+                    )
+                }
+            }
+        }
+        Icon(Icons.Default.LibraryMusic, contentDescription = null, tint = WaveText, modifier = Modifier.size(28.dp))
+    }
+}
+
+@Composable
+private fun PlaylistLibraryRow(
+    playlist: Playlist,
+    tracks: List<Track>,
+    trackArtworkUrl: (Track) -> String?,
+    onClick: () -> Unit,
+) {
+    val artworkUrl = playlist.imageUrl.takeIf { it.isNotBlank() } ?: playlist.trackIds.firstNotNullOfOrNull { trackId ->
+        tracks.firstOrNull { it.id == trackId }?.let(trackArtworkUrl)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Artwork(url = artworkUrl, size = 74, rounded = 2)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = playlist.name.ifBlank { "Untitled playlist" },
+                color = WaveText,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 18.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = playlistSubtitle(playlist),
+                color = WaveSubtle,
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LibraryAlbumRow(
+    album: Album,
+    tracks: List<Track>,
+    albumArtworkUrl: (Album) -> String?,
+    trackArtworkUrl: (Track) -> String?,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Artwork(url = albumArtworkFor(album, tracks, albumArtworkUrl, trackArtworkUrl), size = 74, rounded = 2)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(album.name, color = WaveText, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(albumSubtitle(album), color = WaveSubtle, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun LibraryArtistRow(
+    artist: Artist,
+    tracks: List<Track>,
+    artistArtworkUrl: (Artist) -> String?,
+    trackArtworkUrl: (Track) -> String?,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Artwork(url = artistArtworkFor(artist, tracks, artistArtworkUrl, trackArtworkUrl), size = 74, rounded = 37)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(artist.name, color = WaveText, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("${artist.trackCount} tracks - ${artist.albumCount} albums", color = WaveSubtle, fontSize = 14.sp)
+        }
+    }
+}
+
+@Composable
+private fun RadioLibraryRow(item: PluginRowItem, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Artwork(url = item.imageUrl.takeIf { it.isNotBlank() }, size = 74, rounded = 2)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(item.title, color = WaveText, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(item.subtitle.ifBlank { "Live radio" }, color = WaveSubtle, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = WaveSubtle)
     }
 }
 
@@ -945,13 +1419,17 @@ private fun TracksScreen(
     playerState: PlayerState,
     onPlayFromHere: (Track, List<Track>) -> Unit,
     playlists: List<Playlist>,
-    onAddTrackToPlaylist: (Track, Playlist) -> Unit,
+    onAddTracksToPlaylist: (List<Track>, Playlist) -> Unit,
     trackArtworkUrl: (Track) -> String?,
     emptyMessage: String,
 ) {
     var selectedSort by remember { mutableStateOf(TrackSortOption.RecentlyUploaded) }
     val sortedTracks = remember(tracks, selectedSort) {
         tracks.sortedFor(selectedSort)
+    }
+    var selectedTrackIds by remember(sortedTracks) { mutableStateOf<Set<String>>(emptySet()) }
+    val selectedTracks = remember(sortedTracks, selectedTrackIds) {
+        sortedTracks.filter { it.id in selectedTrackIds }
     }
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -971,8 +1449,12 @@ private fun TracksScreen(
                 isCurrent = playerState.currentTrack?.id == track.id,
                 artworkUrl = trackArtworkUrl(track),
                 playlists = playlists,
+                isSelected = track.id in selectedTrackIds,
+                selectionActive = selectedTrackIds.isNotEmpty(),
+                actionTracks = if (track.id in selectedTrackIds) selectedTracks else listOf(track),
+                onToggleSelected = { selectedTrackIds = selectedTrackIds.toggleTrack(track.id) },
                 onClick = { onPlayFromHere(track, sortedTracks) },
-                onAddToPlaylist = onAddTrackToPlaylist,
+                onAddTracksToPlaylist = onAddTracksToPlaylist,
             )
         }
     }
@@ -1147,17 +1629,40 @@ private fun TrackRow(
     artworkUrl: String?,
     playlists: List<Playlist>,
     modifier: Modifier = Modifier,
+    isSelected: Boolean = false,
+    selectionActive: Boolean = false,
+    actionTracks: List<Track> = listOf(track),
+    onToggleSelected: () -> Unit = {},
     onClick: () -> Unit,
-    onAddToPlaylist: (Track, Playlist) -> Unit,
+    onAddTracksToPlaylist: (List<Track>, Playlist) -> Unit,
+    onCreatePlaylistWithTracks: (String, String, List<Track>) -> Unit = { _, _, _ -> },
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    var showPlaylistPicker by remember { mutableStateOf(false) }
     val editablePlaylists = remember(playlists) {
         playlists.filter { it.id.isNotBlank() && !it.type.equals("smart", ignoreCase = true) }
+    }
+    val playlistTracks = remember(actionTracks) {
+        actionTracks.filter { it.id.isNotBlank() && !it.isExternal }.distinctBy { it.id }
+    }
+    val rowClick = {
+        if (selectionActive) {
+            onToggleSelected()
+        } else {
+            onClick()
+        }
     }
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isSelected) WaveAccent.copy(alpha = 0.16f) else Color.Transparent)
+            .pointerInput(selectionActive, track.id) {
+                detectTapGestures(
+                    onTap = { rowClick() },
+                    onLongPress = { onToggleSelected() },
+                )
+            }
             .padding(horizontal = 16.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1202,43 +1707,286 @@ private fun TrackRow(
                 )
                 DropdownMenuItem(
                     text = { Text("Add to playlist", color = WaveSubtle, fontWeight = FontWeight.Bold) },
-                    enabled = false,
-                    onClick = {},
+                    leadingIcon = {
+                        Icon(Icons.AutoMirrored.Filled.PlaylistPlay, contentDescription = null, tint = WaveAccent)
+                    },
+                    enabled = playlistTracks.isNotEmpty() && editablePlaylists.isNotEmpty(),
+                    onClick = {
+                        menuOpen = false
+                        showPlaylistPicker = true
+                    },
                 )
-                if (track.isExternal) {
-                    DropdownMenuItem(
-                        text = { Text("Radio streams cannot be added", color = WaveSubtle) },
-                        enabled = false,
-                        onClick = {},
+            }
+        }
+    }
+    if (showPlaylistPicker) {
+        AddToPlaylistSheet(
+            tracks = playlistTracks,
+            playlists = editablePlaylists,
+            onDismiss = { showPlaylistPicker = false },
+            onAddTracksToPlaylist = onAddTracksToPlaylist,
+            onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
+        )
+    }
+}
+
+@Composable
+private fun AddToPlaylistSheet(
+    tracks: List<Track>,
+    playlists: List<Playlist>,
+    onDismiss: () -> Unit,
+    onAddTracksToPlaylist: (List<Track>, Playlist) -> Unit,
+    onCreatePlaylistWithTracks: (String, String, List<Track>) -> Unit,
+) {
+    val trackIds = remember(tracks) { tracks.map { it.id }.filter { it.isNotBlank() }.toSet() }
+    val initiallySavedPlaylistIds = remember(playlists, trackIds) {
+        playlists
+            .filter { playlist -> trackIds.isNotEmpty() && trackIds.all { it in playlist.trackIds } }
+            .map { it.id }
+            .toSet()
+    }
+    var selectedPlaylistIds by remember(playlists, trackIds) { mutableStateOf(initiallySavedPlaylistIds) }
+    var query by remember { mutableStateOf("") }
+    val filteredPlaylists = remember(playlists, query) {
+        playlists.filterByQuery(query) { listOf(name, description) }
+    }
+    val savedPlaylists = remember(filteredPlaylists, initiallySavedPlaylistIds) {
+        filteredPlaylists.filter { it.id in initiallySavedPlaylistIds }
+    }
+    val relevantPlaylists = remember(filteredPlaylists, initiallySavedPlaylistIds) {
+        filteredPlaylists.filter { it.id !in initiallySavedPlaylistIds }
+    }
+    val newlySelectedPlaylists = remember(playlists, selectedPlaylistIds, initiallySavedPlaylistIds) {
+        playlists.filter { it.id in selectedPlaylistIds && it.id !in initiallySavedPlaylistIds }
+    }
+    var showCreatePlaylist by remember { mutableStateOf(false) }
+    var newPlaylistName by remember { mutableStateOf("") }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(WaveBackground)
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item {
+                    AddToPlaylistHeader()
+                }
+                item {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Button(
+                            onClick = { showCreatePlaylist = !showCreatePlaylist },
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = Color.White,
+                                contentColor = Color.Black,
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 88.dp, vertical = 28.dp)
+                                .height(64.dp),
+                            shape = RoundedCornerShape(999.dp),
+                        ) {
+                            Text("New playlist", fontSize = 18.sp, fontWeight = FontWeight.Black)
+                        }
+                        if (showCreatePlaylist) {
+                            OutlinedTextField(
+                                value = newPlaylistName,
+                                onValueChange = { newPlaylistName = it },
+                                label = { Text("Playlist name") },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                            )
+                            Button(
+                                onClick = {
+                                    onCreatePlaylistWithTracks(newPlaylistName, "", tracks)
+                                    onDismiss()
+                                },
+                                enabled = newPlaylistName.isNotBlank(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                            ) {
+                                Text("Create and add")
+                            }
+                        }
+                    }
+                }
+                item {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = WaveText) },
+                        placeholder = { Text("Find playlist", fontWeight = FontWeight.Bold) },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
                     )
-                } else if (editablePlaylists.isEmpty()) {
-                    DropdownMenuItem(
-                        text = { Text("No manual playlists", color = WaveSubtle) },
-                        enabled = false,
-                        onClick = {},
-                    )
-                } else {
-                    editablePlaylists.forEach { playlist ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = playlist.name.ifBlank { "Untitled playlist" },
-                                    color = WaveText,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            },
-                            leadingIcon = {
-                                Icon(Icons.AutoMirrored.Filled.PlaylistPlay, contentDescription = null, tint = WaveAccent)
-                            },
-                            onClick = {
-                                menuOpen = false
-                                onAddToPlaylist(track, playlist)
-                            },
+                }
+                if (savedPlaylists.isNotEmpty()) {
+                    item {
+                        PlaylistSelectionSectionHeader(
+                            title = "Saved in",
+                            action = null,
+                            onAction = {},
+                        )
+                    }
+                    items(savedPlaylists, key = { it.id.ifBlank { it.name } }) { playlist ->
+                        PlaylistSelectionRow(
+                            playlist = playlist,
+                            selected = playlist.id in selectedPlaylistIds,
+                            onClick = {},
                         )
                     }
                 }
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null, tint = WaveText)
+                        Text("Most relevant", color = WaveText, fontWeight = FontWeight.Black)
+                    }
+                }
+                if (relevantPlaylists.isEmpty() && savedPlaylists.isEmpty()) {
+                    item { EmptyLibraryMessage("No playlists match \"$query\".") }
+                }
+                items(relevantPlaylists, key = { it.id.ifBlank { it.name } }) { playlist ->
+                    PlaylistSelectionRow(
+                        playlist = playlist,
+                        selected = playlist.id in selectedPlaylistIds,
+                        onClick = { selectedPlaylistIds = selectedPlaylistIds.togglePlaylist(playlist.id) },
+                    )
+                }
             }
+
+            Button(
+                onClick = {
+                    newlySelectedPlaylists.forEach { playlist ->
+                        onAddTracksToPlaylist(tracks, playlist)
+                    }
+                    onDismiss()
+                },
+                enabled = newlySelectedPlaylists.isNotEmpty(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 72.dp)
+                    .height(64.dp),
+                shape = RoundedCornerShape(999.dp),
+            ) {
+                Text("Done", color = WaveBackground, fontSize = 20.sp, fontWeight = FontWeight.Black)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddToPlaylistHeader() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 18.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("Add to playlist", color = WaveText, fontSize = 20.sp, fontWeight = FontWeight.Black)
+    }
+}
+
+@Composable
+private fun PlaylistSelectionSectionHeader(
+    title: String,
+    action: String?,
+    onAction: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, color = WaveText, fontSize = 18.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+        if (action != null) {
+            Text(
+                text = action,
+                color = WaveAccent,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable(onClick = onAction),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistSelectionRow(
+    playlist: Playlist,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Artwork(url = null, size = 70, rounded = 4)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = playlist.name.ifBlank { "Untitled playlist" },
+                color = WaveText,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = playlistSelectionSubtitle(playlist),
+                color = WaveSubtle,
+                fontSize = 15.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        PlaylistSelectionIndicator(selected = selected)
+    }
+}
+
+@Composable
+private fun PlaylistSelectionIndicator(selected: Boolean) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(if (selected) WaveAccent else Color.Transparent)
+            .border(
+                width = if (selected) 0.dp else 4.dp,
+                color = if (selected) Color.Transparent else WaveSubtle,
+                shape = CircleShape,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            Icon(Icons.Default.Check, contentDescription = null, tint = WaveBackground, modifier = Modifier.size(30.dp))
         }
     }
 }
@@ -1246,11 +1994,14 @@ private fun TrackRow(
 @Composable
 private fun LibraryDetailScreen(
     detail: LibraryDetail,
+    allTracks: List<Track>,
     playerState: PlayerState,
-    onBack: () -> Unit,
     onPlayFromHere: (Track, List<Track>) -> Unit,
     playlists: List<Playlist>,
-    onAddTrackToPlaylist: (Track, Playlist) -> Unit,
+    onAddTracksToPlaylist: (List<Track>, Playlist) -> Unit,
+    onCreatePlaylistWithTracks: (String, String, List<Track>) -> Unit,
+    onUpdatePlaylist: (Playlist) -> Unit,
+    onDeletePlaylist: (Playlist) -> Unit,
     trackArtworkUrl: (Track) -> String?,
     albumArtworkUrl: (Album) -> String?,
     artistArtworkUrl: (Artist) -> String?,
@@ -1262,6 +2013,11 @@ private fun LibraryDetailScreen(
     val tracks: List<Track>
     val albums: List<Album>
     var shuffleSeed by remember { mutableStateOf(0) }
+    var selectedSort by remember { mutableStateOf(TrackSortOption.RecentlyUploaded) }
+    var showAddTracksSheet by remember { mutableStateOf(false) }
+    var showEditPlaylistSheet by remember { mutableStateOf(false) }
+    var showRenamePlaylistSheet by remember { mutableStateOf(false) }
+    var showDeletePlaylistSheet by remember { mutableStateOf(false) }
 
     when (detail) {
         is LibraryDetail.AlbumPage -> {
@@ -1282,16 +2038,20 @@ private fun LibraryDetailScreen(
             title = detail.playlist.name
             subtitle = playlistSubtitle(detail.playlist).replace("${detail.playlist.trackIds.size} tracks", "${detail.tracks.size} tracks")
             tracks = detail.tracks
-            artworkUrl = tracks.firstOrNull()?.let(trackArtworkUrl)
+            artworkUrl = playlistArtworkFor(detail.playlist, tracks, trackArtworkUrl)
             albums = emptyList()
         }
     }
-    val visibleTracks = remember(tracks, shuffleSeed) {
+    val visibleTracks = remember(tracks, shuffleSeed, selectedSort, detail) {
         if (shuffleSeed == 0 || tracks.size < 2) {
-            tracks
+            if (detail is LibraryDetail.PlaylistPage) tracks.sortedFor(selectedSort) else tracks
         } else {
             tracks.shuffled(Random(shuffleSeed))
         }
+    }
+    var selectedTrackIds by remember(visibleTracks) { mutableStateOf<Set<String>>(emptySet()) }
+    val selectedTracks = remember(visibleTracks, selectedTrackIds) {
+        visibleTracks.filter { it.id in selectedTrackIds }
     }
 
     LazyColumn(
@@ -1303,9 +2063,6 @@ private fun LibraryDetailScreen(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -1356,6 +2113,35 @@ private fun LibraryDetailScreen(
                         }
                     }
                 }
+                if (detail is LibraryDetail.PlaylistPage) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        PlaylistActionPill(
+                            label = "Add",
+                            icon = Icons.Default.Add,
+                            onClick = { showAddTracksSheet = true },
+                        )
+                        PlaylistActionPill(
+                            label = "Edit",
+                            icon = Icons.Default.Edit,
+                            enabled = detail.playlist.type != "smart",
+                            onClick = { showEditPlaylistSheet = true },
+                        )
+                        PlaylistSortPill(
+                            selectedSort = selectedSort,
+                            onSortSelected = {
+                                selectedSort = it
+                                shuffleSeed = 0
+                            },
+                        )
+                        PlaylistOverflowMenu(
+                            onRename = { showRenamePlaylistSheet = true },
+                            onDelete = { showDeletePlaylistSheet = true },
+                        )
+                    }
+                }
             }
         }
 
@@ -1387,12 +2173,477 @@ private fun LibraryDetailScreen(
                     isCurrent = playerState.currentTrack?.id == track.id,
                     artworkUrl = trackArtworkUrl(track),
                     playlists = playlists,
+                    isSelected = track.id in selectedTrackIds,
+                    selectionActive = selectedTrackIds.isNotEmpty(),
+                    actionTracks = if (track.id in selectedTrackIds) selectedTracks else listOf(track),
+                    onToggleSelected = { selectedTrackIds = selectedTrackIds.toggleTrack(track.id) },
                     modifier = Modifier.animateItem(),
                     onClick = { onPlayFromHere(track, visibleTracks) },
-                    onAddToPlaylist = onAddTrackToPlaylist,
+                    onAddTracksToPlaylist = onAddTracksToPlaylist,
+                    onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
                 )
             }
         }
+    }
+
+    if (detail is LibraryDetail.PlaylistPage && showAddTracksSheet) {
+        AddTracksToPlaylistSheet(
+            playlist = detail.playlist,
+            tracks = allTracks.filter { track -> track.id.isNotBlank() && !track.isExternal && track.id !in detail.playlist.trackIds },
+            onDismiss = { showAddTracksSheet = false },
+            onAddTracksToPlaylist = onAddTracksToPlaylist,
+            trackArtworkUrl = trackArtworkUrl,
+        )
+    }
+
+    if (detail is LibraryDetail.PlaylistPage && showEditPlaylistSheet) {
+        EditPlaylistTracksScreen(
+            playlist = detail.playlist,
+            tracks = tracks,
+            trackArtworkUrl = trackArtworkUrl,
+            onDismiss = { showEditPlaylistSheet = false },
+            onSave = { updatedPlaylist ->
+                onUpdatePlaylist(updatedPlaylist)
+                showEditPlaylistSheet = false
+            },
+        )
+    }
+
+    if (detail is LibraryDetail.PlaylistPage && showRenamePlaylistSheet) {
+        RenamePlaylistSheet(
+            playlist = detail.playlist,
+            previewArtworkUrl = artworkUrl,
+            onDismiss = { showRenamePlaylistSheet = false },
+            onSave = { renamedPlaylist ->
+                onUpdatePlaylist(renamedPlaylist)
+                showRenamePlaylistSheet = false
+            },
+        )
+    }
+
+    if (detail is LibraryDetail.PlaylistPage && showDeletePlaylistSheet) {
+        DeletePlaylistSheet(
+            playlist = detail.playlist,
+            onDismiss = { showDeletePlaylistSheet = false },
+            onDelete = {
+                onDeletePlaylist(detail.playlist)
+                showDeletePlaylistSheet = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun PlaylistActionPill(
+    label: String,
+    icon: ImageVector,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(if (enabled) WaveSurfaceRaised else WaveSurface)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = if (enabled) WaveText else WaveSubtle, modifier = Modifier.size(22.dp))
+        Text(label, color = if (enabled) WaveText else WaveSubtle, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun PlaylistSortPill(
+    selectedSort: TrackSortOption,
+    onSortSelected: (TrackSortOption) -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(WaveSurfaceRaised)
+                .clickable { menuOpen = true }
+                .padding(horizontal = 16.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null, tint = WaveText, modifier = Modifier.size(22.dp))
+            Text("Sort", color = WaveText, fontWeight = FontWeight.Bold)
+        }
+        DropdownMenu(
+            expanded = menuOpen,
+            onDismissRequest = { menuOpen = false },
+            modifier = Modifier.background(WaveSurface),
+        ) {
+            TrackSortOption.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = if (option == selectedSort) "${option.label} selected" else option.label,
+                            color = WaveText,
+                        )
+                    },
+                    onClick = {
+                        onSortSelected(option)
+                        menuOpen = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistOverflowMenu(
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
+        IconButton(
+            onClick = { menuOpen = true },
+            modifier = Modifier
+                .size(46.dp)
+                .clip(CircleShape)
+                .background(WaveSurfaceRaised),
+        ) {
+            Icon(Icons.Default.MoreVert, contentDescription = "Playlist options", tint = WaveText)
+        }
+        DropdownMenu(
+            expanded = menuOpen,
+            onDismissRequest = { menuOpen = false },
+            modifier = Modifier.background(WaveSurface),
+        ) {
+            DropdownMenuItem(
+                text = { Text("Rename and image", color = WaveText) },
+                onClick = {
+                    menuOpen = false
+                    onRename()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Delete playlist", color = MaterialTheme.colorScheme.error) },
+                onClick = {
+                    menuOpen = false
+                    onDelete()
+                },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RenamePlaylistSheet(
+    playlist: Playlist,
+    previewArtworkUrl: String?,
+    onDismiss: () -> Unit,
+    onSave: (Playlist) -> Unit,
+) {
+    var name by remember(playlist.id) { mutableStateOf(playlist.name) }
+    var imageUrl by remember(playlist.id) { mutableStateOf(playlist.imageUrl) }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = WaveSurface,
+        contentColor = WaveText,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("Edit playlist", color = WaveText, fontSize = 24.sp, fontWeight = FontWeight.Black)
+            Artwork(url = imageUrl.ifBlank { previewArtworkUrl.orEmpty() }, size = 132, rounded = 14)
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Playlist name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = imageUrl,
+                onValueChange = { imageUrl = it },
+                label = { Text("Playlist image URL") },
+                placeholder = { Text("https://...") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = { onSave(playlist.copy(name = name.trim(), imageUrl = imageUrl.trim())) },
+                enabled = name.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Save")
+            }
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DeletePlaylistSheet(
+    playlist: Playlist,
+    onDismiss: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = WaveSurface,
+        contentColor = WaveText,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("Delete playlist?", color = WaveText, fontSize = 24.sp, fontWeight = FontWeight.Black)
+            Text(
+                text = "This will delete ${playlist.name.ifBlank { "this playlist" }}. The tracks will stay in your library.",
+                color = WaveSubtle,
+                fontSize = 15.sp,
+            )
+            Button(
+                onClick = onDelete,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Delete playlist")
+            }
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Cancel")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddTracksToPlaylistSheet(
+    playlist: Playlist,
+    tracks: List<Track>,
+    onDismiss: () -> Unit,
+    onAddTracksToPlaylist: (List<Track>, Playlist) -> Unit,
+    trackArtworkUrl: (Track) -> String?,
+) {
+    var selectedTrackIds by remember(tracks) { mutableStateOf<Set<String>>(emptySet()) }
+    val selectedTracks = remember(tracks, selectedTrackIds) {
+        tracks.filter { it.id in selectedTrackIds }
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = WaveSurface,
+        contentColor = WaveText,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            SectionHeader("Add songs", if (selectedTracks.isEmpty()) playlist.name else "${selectedTracks.size} selected")
+            if (tracks.isEmpty()) {
+                EmptyLibraryMessage("Every available song is already in this playlist.")
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(420.dp),
+                ) {
+                    items(tracks.sortedFor(TrackSortOption.Title), key = { it.id }) { track ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (track.id in selectedTrackIds) WaveAccent.copy(alpha = 0.16f) else Color.Transparent)
+                                .clickable { selectedTrackIds = selectedTrackIds.toggleTrack(track.id) }
+                                .padding(horizontal = 16.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Artwork(url = trackArtworkUrl(track), size = 52, rounded = 5)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(track.title, color = WaveText, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(track.artist, color = WaveSubtle, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            Icon(
+                                imageVector = if (track.id in selectedTrackIds) Icons.Default.Check else Icons.Default.Add,
+                                contentDescription = null,
+                                tint = if (track.id in selectedTrackIds) WaveAccent else WaveSubtle,
+                            )
+                        }
+                    }
+                }
+                Button(
+                    onClick = {
+                        onAddTracksToPlaylist(selectedTracks, playlist)
+                        onDismiss()
+                    },
+                    enabled = selectedTracks.isNotEmpty(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                ) {
+                    Text("Add to playlist")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditPlaylistTracksScreen(
+    playlist: Playlist,
+    tracks: List<Track>,
+    trackArtworkUrl: (Track) -> String?,
+    onDismiss: () -> Unit,
+    onSave: (Playlist) -> Unit,
+) {
+    var editableTracks by remember(playlist.id, tracks) { mutableStateOf(tracks) }
+    val listState = rememberLazyListState()
+    val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
+        editableTracks = editableTracks.moveItem(from.index, to.index)
+    }
+    val hasChanges = remember(editableTracks, playlist.trackIds) {
+        editableTracks.map { it.id } != playlist.trackIds
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(WaveBackground)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+        ) {
+            EditPlaylistHeader(
+                canSave = hasChanges,
+                onSave = {
+                    onSave(playlist.copy(trackIds = editableTracks.map { it.id }))
+                },
+            )
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                state = listState,
+            ) {
+                if (editableTracks.isEmpty()) {
+                    item { EmptyLibraryMessage("This playlist is empty.") }
+                }
+                itemsIndexed(editableTracks, key = { _, track -> track.id }) { index, track ->
+                    ReorderableItem(
+                        state = reorderableState,
+                        key = track.id,
+                    ) { isDragging ->
+                        EditablePlaylistTrackRow(
+                            modifier = Modifier.animateItem(),
+                            dragHandleModifier = with(this) { Modifier.longPressDraggableHandle() },
+                            track = track,
+                            artworkUrl = trackArtworkUrl(track),
+                            isDragging = isDragging,
+                            onRemove = {
+                                editableTracks = editableTracks.toMutableList().also { it.removeAt(index) }
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditPlaylistHeader(
+    canSave: Boolean,
+    onSave: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(WaveSurface)
+            .padding(horizontal = 8.dp, vertical = 18.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("Edit playlist", color = WaveText, fontSize = 20.sp, fontWeight = FontWeight.Black)
+        Text(
+            text = "Save",
+            color = if (canSave) WaveAccent else WaveAccent.copy(alpha = 0.35f),
+            fontWeight = FontWeight.Black,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .clip(RoundedCornerShape(999.dp))
+                .clickable(enabled = canSave, onClick = onSave)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+        )
+    }
+}
+
+@Composable
+private fun EditablePlaylistTrackRow(
+    modifier: Modifier = Modifier,
+    dragHandleModifier: Modifier = Modifier,
+    track: Track,
+    artworkUrl: String?,
+    isDragging: Boolean,
+    onRemove: () -> Unit,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isDragging) WaveAccent.copy(alpha = 0.18f) else Color.Transparent)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        IconButton(onClick = onRemove, modifier = Modifier.size(34.dp)) {
+            Icon(
+                Icons.Default.RemoveCircleOutline,
+                contentDescription = "Remove",
+                tint = WaveSubtle,
+                modifier = Modifier.size(28.dp),
+            )
+        }
+        Artwork(url = artworkUrl, size = 62, rounded = 6)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = track.title,
+                color = WaveText,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = track.artist,
+                color = WaveSubtle,
+                fontSize = 16.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(
+            Icons.Default.DragHandle,
+            contentDescription = "Hold and drag to reorder",
+            tint = if (isDragging) WaveAccent else WaveSubtle,
+            modifier = dragHandleModifier.size(32.dp),
+        )
     }
 }
 
@@ -2038,9 +3289,15 @@ private fun QueueSheet(
     onDismiss: () -> Unit,
     onPlayTrack: (Track) -> Unit,
     playlists: List<Playlist>,
-    onAddTrackToPlaylist: (Track, Playlist) -> Unit,
+    onAddTracksToPlaylist: (List<Track>, Playlist) -> Unit,
+    onCreatePlaylistWithTracks: (String, String, List<Track>) -> Unit,
     trackArtworkUrl: (Track) -> String?,
 ) {
+    var selectedTrackIds by remember(playerState.queue) { mutableStateOf<Set<String>>(emptySet()) }
+    val selectedTracks = remember(playerState.queue, selectedTrackIds) {
+        playerState.queue.filter { it.id in selectedTrackIds }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = WaveSurface,
@@ -2067,8 +3324,13 @@ private fun QueueSheet(
                             isCurrent = playerState.currentTrack?.id == track.id,
                             artworkUrl = trackArtworkUrl(track),
                             playlists = playlists,
+                            isSelected = track.id in selectedTrackIds,
+                            selectionActive = selectedTrackIds.isNotEmpty(),
+                            actionTracks = if (track.id in selectedTrackIds) selectedTracks else listOf(track),
+                            onToggleSelected = { selectedTrackIds = selectedTrackIds.toggleTrack(track.id) },
                             onClick = { onPlayTrack(track) },
-                            onAddToPlaylist = onAddTrackToPlaylist,
+                            onAddTracksToPlaylist = onAddTracksToPlaylist,
+                            onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
                         )
                     }
                 }
@@ -2328,6 +3590,16 @@ private fun <T> List<T>.filterByQuery(query: String, fields: T.() -> List<String
     return filter { item -> item.fields().any { it.contains(normalized, ignoreCase = true) } }
 }
 
+private fun Set<String>.toggleTrack(trackId: String): Set<String> {
+    if (trackId.isBlank()) return this
+    return if (trackId in this) this - trackId else this + trackId
+}
+
+private fun Set<String>.togglePlaylist(playlistId: String): Set<String> {
+    if (playlistId.isBlank()) return this
+    return if (playlistId in this) this - playlistId else this + playlistId
+}
+
 private fun emptyMessage(type: String, searchQuery: String): String {
     return if (searchQuery.isBlank()) {
         "No $type found on this server."
@@ -2351,6 +3623,15 @@ private fun playlistSubtitle(playlist: Playlist): String {
         "${playlist.trackIds.size} tracks",
         playlist.description,
     ).filter { it.isNotBlank() }.joinToString(" - ")
+}
+
+private fun playlistSelectionSubtitle(playlist: Playlist): String {
+    val count = playlist.trackIds.size
+    return when {
+        count == 0 -> "Empty"
+        playlist.description.isNotBlank() -> "${playlist.description} - $count songs"
+        else -> "$count songs"
+    }
 }
 
 private fun List<Track>.sortedFor(sortOption: TrackSortOption): List<Track> {
@@ -2378,6 +3659,20 @@ private fun List<Track>.sortedFor(sortOption: TrackSortOption): List<Track> {
 
 private fun <T> compareByText(selector: (T) -> String): Comparator<T> {
     return compareBy(String.CASE_INSENSITIVE_ORDER, selector)
+}
+
+private fun <T> List<T>.sortedByText(selector: (T) -> String): List<T> {
+    return sortedWith(compareByText(selector))
+}
+
+private fun <T> List<T>.moveItem(fromIndex: Int, toIndex: Int): List<T> {
+    if (fromIndex == toIndex || fromIndex !in indices || toIndex !in indices) {
+        return this
+    }
+    return toMutableList().also { items ->
+        val item = items.removeAt(fromIndex)
+        items.add(toIndex, item)
+    }
 }
 
 private fun String.toEpochMillis(): Long {
@@ -2410,6 +3705,15 @@ private fun artistArtworkFor(
         ?: tracks.firstOrNull { track ->
             track.artist.equals(artist.name, ignoreCase = true)
         }?.let(trackArtworkUrl)
+}
+
+private fun playlistArtworkFor(
+    playlist: Playlist,
+    tracks: List<Track>,
+    trackArtworkUrl: (Track) -> String?,
+): String? {
+    return playlist.imageUrl.takeIf { it.isNotBlank() }
+        ?: tracks.firstOrNull()?.let(trackArtworkUrl)
 }
 
 private fun pluginItemToTrack(pluginId: String, item: PluginRowItem): Track {

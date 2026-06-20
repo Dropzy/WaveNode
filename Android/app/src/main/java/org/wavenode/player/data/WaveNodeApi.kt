@@ -84,6 +84,61 @@ class WaveNodeApi(
         getList(session, "/api/playlists/${pathSegment(playlistId)}/tracks", "Could not load playlist")
     }
 
+    suspend fun createPlaylist(session: SavedSession, name: String, description: String): Playlist = withContext(Dispatchers.IO) {
+        val body = json.encodeToString(
+            PlaylistRequest(
+                name = name,
+                description = description,
+            ),
+        ).toRequestBody(jsonMediaType)
+        val request = authorizedRequest(session, "/api/playlists")
+            .post(body)
+            .build()
+        client.newCall(request).execute().use { response ->
+            val responseBody = response.body?.string().orEmpty()
+            val apiResponse = json.decodeFromString<ApiResponse<Playlist>>(responseBody)
+            if (!response.isSuccessful || !apiResponse.success || apiResponse.data == null) {
+                throw IllegalStateException(apiResponse.error ?: "Could not create playlist")
+            }
+            apiResponse.data
+        }
+    }
+
+    suspend fun updatePlaylist(session: SavedSession, playlist: Playlist): Playlist = withContext(Dispatchers.IO) {
+        val body = json.encodeToString(
+            PlaylistRequest(
+                name = playlist.name,
+                description = playlist.description,
+                imageUrl = playlist.imageUrl,
+                type = playlist.type,
+                trackIds = playlist.trackIds,
+            ),
+        ).toRequestBody(jsonMediaType)
+        val request = authorizedRequest(session, "/api/playlists/${pathSegment(playlist.id)}")
+            .put(body)
+            .build()
+        client.newCall(request).execute().use { response ->
+            val responseBody = response.body?.string().orEmpty()
+            val apiResponse = json.decodeFromString<ApiResponse<Playlist>>(responseBody)
+            if (!response.isSuccessful || !apiResponse.success || apiResponse.data == null) {
+                throw IllegalStateException(apiResponse.error ?: "Could not update playlist")
+            }
+            apiResponse.data
+        }
+    }
+
+    suspend fun deletePlaylist(session: SavedSession, playlistId: String) = withContext(Dispatchers.IO) {
+        val request = authorizedRequest(session, "/api/playlists/${pathSegment(playlistId)}")
+            .delete()
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val responseBody = response.body?.string().orEmpty()
+                throw IllegalStateException(apiErrorMessage(responseBody, "Could not delete playlist"))
+            }
+        }
+    }
+
     suspend fun addTrackToPlaylist(session: SavedSession, playlistId: String, trackId: String): Playlist = withContext(Dispatchers.IO) {
         val body = json.encodeToString(PlaylistTrackRequest(trackId)).toRequestBody(jsonMediaType)
         val request = authorizedRequest(session, "/api/playlists/${pathSegment(playlistId)}/tracks")
@@ -94,6 +149,21 @@ class WaveNodeApi(
             val apiResponse = json.decodeFromString<ApiResponse<Playlist>>(responseBody)
             if (!response.isSuccessful || !apiResponse.success || apiResponse.data == null) {
                 throw IllegalStateException(apiResponse.error ?: "Could not add track to playlist")
+            }
+            apiResponse.data
+        }
+    }
+
+    suspend fun addTracksToPlaylist(session: SavedSession, playlistId: String, trackIds: List<String>): Playlist = withContext(Dispatchers.IO) {
+        val body = json.encodeToString(PlaylistTracksRequest(trackIds)).toRequestBody(jsonMediaType)
+        val request = authorizedRequest(session, "/api/playlists/${pathSegment(playlistId)}/tracks/bulk")
+            .post(body)
+            .build()
+        client.newCall(request).execute().use { response ->
+            val responseBody = response.body?.string().orEmpty()
+            val apiResponse = json.decodeFromString<ApiResponse<Playlist>>(responseBody)
+            if (!response.isSuccessful || !apiResponse.success || apiResponse.data == null) {
+                throw IllegalStateException(apiResponse.error ?: "Could not add tracks to playlist")
             }
             apiResponse.data
         }

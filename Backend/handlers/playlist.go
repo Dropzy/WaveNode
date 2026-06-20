@@ -184,6 +184,9 @@ func (h *PlaylistHandler) UpdatePlaylist(w http.ResponseWriter, r *http.Request)
 	if updatedPlaylist.TrackIDs == nil {
 		updatedPlaylist.TrackIDs = existingPlaylist.TrackIDs
 	}
+	if updatedPlaylist.ImageURL == "" {
+		updatedPlaylist.ImageURL = existingPlaylist.ImageURL
+	}
 
 	if err := h.db.UpdatePlaylist(&updatedPlaylist); err != nil {
 		response := auth.APIResponse{
@@ -279,6 +282,9 @@ func (h *PlaylistHandler) UpdateSmartPlaylist(w http.ResponseWriter, r *http.Req
 	updated.Type = database.PlaylistTypeSmart
 	updated.TrackIDs = []string{}
 	updated.CreatedAt = existing.CreatedAt
+	if updated.ImageURL == "" {
+		updated.ImageURL = existing.ImageURL
+	}
 	if err := h.db.UpdatePlaylist(&updated); err != nil {
 		writePlaylistError(w, http.StatusInternalServerError, "Failed to update smart playlist: "+err.Error())
 		return
