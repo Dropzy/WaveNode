@@ -97,6 +97,7 @@ To enable one-click Docker updates, add these values to `.env`:
 WAVENODE_UPDATE_REPOSITORY=Dropzy/WaveNode
 WAVENODE_UPDATER_URL=http://updater:8090
 WAVENODE_UPDATER_TOKEN=replace-with-a-long-random-token
+WAVENODE_UPDATER_COMPOSE_FILES=/compose/docker-compose.yml
 WAVENODE_UPDATE_TIMEOUT_SECONDS=900
 COMPOSE_PROFILES=updater
 ```

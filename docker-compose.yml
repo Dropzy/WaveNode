@@ -64,12 +64,14 @@ services:
     environment:
       WAVENODE_VERSION: ${WAVENODE_VERSION:-0.1.0}
       UPDATER_TOKEN: ${WAVENODE_UPDATER_TOKEN:-}
-      UPDATER_COMPOSE_FILES: /compose/docker-compose.yml
+      UPDATER_COMPOSE_FILES: ${WAVENODE_UPDATER_COMPOSE_FILES:-/compose/docker-compose.yml}
       UPDATER_SERVICES: backend,frontend
       UPDATER_TIMEOUT_SECONDS: ${WAVENODE_UPDATE_TIMEOUT_SECONDS:-900}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./docker-compose.yml:/compose/docker-compose.yml:ro
+      - ./docker-compose.dev.yml:/compose/docker-compose.dev.yml:ro
+      - ./docker-compose.internet.yml:/compose/docker-compose.internet.yml:ro
       - ./.env:/compose/.env:ro
     working_dir: /compose
 
