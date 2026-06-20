@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode, useRef } from 'react';
-import { Music, recentlyPlayedAPI } from '../services/api';
+import { Music, musicAPI, playbackConnectAPI, recentlyPlayedAPI, scrobbleAPI } from '../services/api';
 import { audioService } from '../services/audioService';
 import { useAuth } from './AuthContext';
 import { getTrackArtworkUrl } from '../utils/mediaUrl';
@@ -42,6 +42,7 @@ interface AudioContextType {
   volume: number;
   isLoading: boolean;
   playTrack: (track: Music) => Promise<void>;
+  playFromQueue: (tracks: Music[], index: number) => void;
   playPlaylist: (tracks: Music[]) => void;
   playPlaylistShuffled: (tracks: Music[]) => void;
   addToQueue: (track: Music) => void;
@@ -64,6 +65,11 @@ interface AudioContextType {
   recentlyPlayed: Music[];
   queue: Music[];
   currentTrackIndex: number;
+  connectedPlaybackSessionId: string | null;
+  connectedPlaybackDeviceName: string;
+  controlledByPlaybackSessionId: string | null;
+  connectPlaybackTo: (targetSessionId: string, deviceName: string) => Promise<void>;
+  returnPlaybackToThisDevice: () => Promise<void>;
 }
 
 const AudioContext = createContext<AudioContextType | undefined>(undefined);
@@ -100,6 +106,9 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
   const [repeatMode, setRepeatModeState] = useState<'none' | 'one' | 'all'>(initialSession.repeatMode);
   const [recentlyPlayedRefreshTrigger, setRecentlyPlayedRefreshTrigger] = useState(0);
   const [recentlyPlayed, setRecentlyPlayed] = useState<Music[]>([]);
+  const [connectedPlaybackSessionId, setConnectedPlaybackSessionId] = useState<string | null>(null);
+  const [connectedPlaybackDeviceName, setConnectedPlaybackDeviceName] = useState('');
+  const [controlledByPlaybackSessionId, setControlledByPlaybackSessionId] = useState<string | null>(null);
 
   // Load recently played tracks when trigger changes and user is authenticated
   useEffect(() => {
@@ -133,6 +142,19 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
   const currentTrackIndexRef = useRef(initialSession.currentTrackIndex);
   const isShuffledRef = useRef(initialSession.isShuffled);
   const repeatModeRef = useRef<'none' | 'one' | 'all'>(initialSession.repeatMode);
+  const listenedScrobbledTrackRef = useRef<string | null>(null);
+  const nowPlayingScrobbledTrackRef = useRef<string | null>(null);
+  const connectedPlaybackSessionIdRef = useRef<string | null>(null);
+  const remoteProgressIntervalRef = useRef<number | null>(null);
+  const durationRef = useRef(duration);
+
+  useEffect(() => {
+    connectedPlaybackSessionIdRef.current = connectedPlaybackSessionId;
+  }, [connectedPlaybackSessionId]);
+
+  useEffect(() => {
+    durationRef.current = duration;
+  }, [duration]);
 
   useEffect(() => {
     queueRef.current = playlistQueue;
@@ -153,6 +175,82 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
       // Don't throw error - this is a non-critical feature
     }
   }, []);
+
+  const sendPlaybackCommand = useCallback(async (
+    targetSessionId: string,
+    tracks: Music[],
+    index: number,
+    positionSeconds = 0,
+    action: 'play_queue' | 'toggle_play_pause' | 'seek' = 'play_queue',
+  ) => {
+    const safeIndex = tracks.length > 0 ? Math.max(0, Math.min(index, tracks.length - 1)) : 0;
+    const positionMs = Math.max(0, Math.round(positionSeconds * 1000));
+    await playbackConnectAPI.createHandoff(
+      targetSessionId,
+      tracks.map(track => track.id),
+      safeIndex,
+      positionMs,
+      action,
+    );
+  }, []);
+
+  const stopRemoteProgressClock = useCallback(() => {
+    if (remoteProgressIntervalRef.current) {
+      window.clearInterval(remoteProgressIntervalRef.current);
+      remoteProgressIntervalRef.current = null;
+    }
+  }, []);
+
+  const startRemoteProgressClock = useCallback(() => {
+    stopRemoteProgressClock();
+    if (!connectedPlaybackSessionIdRef.current) {
+      return;
+    }
+    remoteProgressIntervalRef.current = window.setInterval(() => {
+      if (!connectedPlaybackSessionIdRef.current) {
+        stopRemoteProgressClock();
+        return;
+      }
+      setCurrentTime(previous => {
+        const next = previous + 1;
+        const currentDuration = durationRef.current;
+        return currentDuration > 0 ? Math.min(next, currentDuration) : next;
+      });
+    }, 1000);
+  }, [stopRemoteProgressClock]);
+
+  const playRemoteQueue = useCallback(async (tracks: Music[], index: number, positionSeconds = 0): Promise<boolean> => {
+    const targetSessionId = connectedPlaybackSessionIdRef.current;
+    if (!targetSessionId || tracks.length === 0) {
+      return false;
+    }
+
+    const safeIndex = Math.max(0, Math.min(index, tracks.length - 1));
+    const nextTrack = tracks[safeIndex];
+    setPlaylistQueue(tracks);
+    setCurrentTrackIndex(safeIndex);
+    setCurrentTrack(nextTrack);
+    currentTrackIdRef.current = nextTrack.id;
+    setCurrentTime(positionSeconds);
+    setDuration(nextTrack.duration || 0);
+    setIsLoading(false);
+    setControlledByPlaybackSessionId(null);
+    audioService.pause();
+    setIsPlaying(true);
+    startRemoteProgressClock();
+
+    try {
+      await sendPlaybackCommand(targetSessionId, tracks, safeIndex, positionSeconds);
+      return true;
+    } catch (error) {
+      console.error('Failed to send playback to connected device:', error);
+      setConnectedPlaybackSessionId(null);
+      setConnectedPlaybackDeviceName('');
+      connectedPlaybackSessionIdRef.current = null;
+      stopRemoteProgressClock();
+      return false;
+    }
+  }, [sendPlaybackCommand, startRemoteProgressClock, stopRemoteProgressClock]);
 
   useEffect(() => {
     // Set up audio service callbacks once
@@ -184,8 +282,9 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
       if (playTimeout.current) {
         clearTimeout(playTimeout.current);
       }
+      stopRemoteProgressClock();
     };
-  }, []); // Empty dependency array - run only once
+  }, [stopRemoteProgressClock]);
 
   useEffect(() => {
     const restoredSession = initialSessionRef.current;
@@ -216,6 +315,12 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
   }, []);
 
   const playTrack = useCallback(async (track: Music) => {
+    if (await playRemoteQueue([track], 0, 0)) {
+      return;
+    }
+
+    setControlledByPlaybackSessionId(null);
+
     if (currentTrackIdRef.current === track.id) {
       audioService.seekTo(0);
       await audioService.play();
@@ -235,6 +340,13 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
       // External live streams are not library tracks and cannot be added to track history.
       if (!track.is_external) {
         await addToRecentlyPlayed(track);
+        listenedScrobbledTrackRef.current = null;
+        if (nowPlayingScrobbledTrackRef.current !== track.id) {
+          nowPlayingScrobbledTrackRef.current = track.id;
+          void scrobbleAPI.nowPlaying(track.id).catch(error => {
+            console.error('Failed to update now playing:', error);
+          });
+        }
       }
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) {
@@ -245,10 +357,85 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
         isSettingTrackRef.current = false;
       }
     }
+  }, [addToRecentlyPlayed, playRemoteQueue]);
+
+  const playTrackLocally = useCallback(async (track: Music, startTime = 0) => {
+    if (currentTrackIdRef.current === track.id) {
+      audioService.seekTo(startTime);
+      await audioService.play();
+      return;
+    }
+
+    requestedTrackIdRef.current = track.id;
+    isSettingTrackRef.current = true;
+    setIsLoading(true);
+
+    try {
+      await audioService.setTrack(track, true, startTime);
+      if (requestedTrackIdRef.current !== track.id) {
+        return;
+      }
+
+      if (!track.is_external) {
+        await addToRecentlyPlayed(track);
+        listenedScrobbledTrackRef.current = null;
+        if (nowPlayingScrobbledTrackRef.current !== track.id) {
+          nowPlayingScrobbledTrackRef.current = track.id;
+          void scrobbleAPI.nowPlaying(track.id).catch(error => {
+            console.error('Failed to update now playing:', error);
+          });
+        }
+      }
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        console.error('Failed to play track locally:', error);
+      }
+      if (requestedTrackIdRef.current === track.id) {
+        setIsLoading(false);
+        isSettingTrackRef.current = false;
+      }
+    }
   }, [addToRecentlyPlayed]);
 
+  useEffect(() => {
+    if (!currentTrack || currentTrack.is_external || !isPlaying || duration <= 0) {
+      return;
+    }
+    if (listenedScrobbledTrackRef.current === currentTrack.id) {
+      return;
+    }
+    const threshold = Math.min(duration / 2, 240);
+    if (currentTime < threshold) {
+      return;
+    }
+    listenedScrobbledTrackRef.current = currentTrack.id;
+    void scrobbleAPI.listened(currentTrack.id).catch(error => {
+      console.error('Failed to scrobble track:', error);
+    });
+  }, [currentTrack, currentTime, duration, isPlaying]);
+
   const togglePlayPause = async () => {
+    const targetSessionId = connectedPlaybackSessionIdRef.current;
+    if (targetSessionId) {
+      try {
+        await sendPlaybackCommand(targetSessionId, [], 0, 0, 'toggle_play_pause');
+        setIsPlaying(previous => {
+          const next = !previous;
+          if (next) {
+            startRemoteProgressClock();
+          } else {
+            stopRemoteProgressClock();
+          }
+          return next;
+        });
+      } catch (error) {
+        console.error('Failed to toggle connected playback:', error);
+      }
+      return;
+    }
+
     try {
+      setControlledByPlaybackSessionId(null);
       await audioService.togglePlayPause();
     } catch (error) {
       console.error('Failed to toggle play/pause:', error);
@@ -261,9 +448,22 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
     audioService.setVolume(clampedVolume);
   };
 
-  const seekTo = (time: number) => {
+  const seekTo = useCallback((time: number) => {
+    const targetSessionId = connectedPlaybackSessionIdRef.current;
+    if (targetSessionId) {
+      setCurrentTime(time);
+      if (isPlaying) {
+        startRemoteProgressClock();
+      }
+      void sendPlaybackCommand(targetSessionId, [], 0, time, 'seek').catch(error => {
+        console.error('Failed to seek connected playback:', error);
+      });
+      return;
+    }
+
+    setControlledByPlaybackSessionId(null);
     audioService.seekTo(time);
-  };
+  }, [isPlaying, sendPlaybackCommand, startRemoteProgressClock]);
 
   const nextTrack = useCallback(() => {
     if (playlistQueue.length === 0) {
@@ -276,14 +476,22 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
         nextIndex = Math.floor(Math.random() * playlistQueue.length);
       }
       setCurrentTrackIndex(nextIndex);
-      void playTrack(playlistQueue[nextIndex]);
+      void playRemoteQueue(playlistQueue, nextIndex, 0).then(sent => {
+        if (!sent) {
+          void playTrack(playlistQueue[nextIndex]);
+        }
+      });
       return;
     }
 
     const nextIndex = (currentTrackIndex + 1) % playlistQueue.length;
     setCurrentTrackIndex(nextIndex);
-    void playTrack(playlistQueue[nextIndex]);
-  }, [currentTrackIndex, isShuffled, playTrack, playlistQueue]);
+    void playRemoteQueue(playlistQueue, nextIndex, 0).then(sent => {
+      if (!sent) {
+        void playTrack(playlistQueue[nextIndex]);
+      }
+    });
+  }, [currentTrackIndex, isShuffled, playRemoteQueue, playTrack, playlistQueue]);
 
   useEffect(() => {
     audioService.setTrackEndCallback(() => {
@@ -321,6 +529,10 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
 
   const previousTrack = useCallback(() => {
     if (audioService.getCurrentTime() > 3) {
+      if (connectedPlaybackSessionIdRef.current) {
+        seekTo(0);
+        return;
+      }
       audioService.seekTo(0);
       return;
     }
@@ -328,25 +540,161 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
     if (playlistQueue.length > 0) {
       const previousIndex = currentTrackIndex === 0 ? playlistQueue.length - 1 : currentTrackIndex - 1;
       setCurrentTrackIndex(previousIndex);
-      void playTrack(playlistQueue[previousIndex]);
+      void playRemoteQueue(playlistQueue, previousIndex, 0).then(sent => {
+        if (!sent) {
+          void playTrack(playlistQueue[previousIndex]);
+        }
+      });
     }
-  }, [currentTrackIndex, playTrack, playlistQueue]);
+  }, [currentTrackIndex, playRemoteQueue, playTrack, playlistQueue, seekTo]);
 
   const playPlaylist = (tracks: Music[]) => {
     if (tracks.length > 0) {
-      setPlaylistQueue(tracks);
-      setCurrentTrackIndex(0);
-      playTrack(tracks[0]);
+      playFromQueue(tracks, 0);
     }
   };
+
+  const playFromQueue = useCallback((tracks: Music[], index: number) => {
+    if (tracks.length === 0) {
+      return;
+    }
+    const safeIndex = Math.max(0, Math.min(index, tracks.length - 1));
+    void playRemoteQueue(tracks, safeIndex, 0).then(sent => {
+      if (!sent) {
+        setPlaylistQueue(tracks);
+        setCurrentTrackIndex(safeIndex);
+        void playTrack(tracks[safeIndex]);
+      }
+    });
+  }, [playRemoteQueue, playTrack]);
+
+  const playLocalFromQueueAt = useCallback((tracks: Music[], index: number, positionSeconds: number) => {
+    if (tracks.length === 0) {
+      return;
+    }
+    const safeIndex = Math.max(0, Math.min(index, tracks.length - 1));
+    setPlaylistQueue(tracks);
+    setCurrentTrackIndex(safeIndex);
+    void playTrackLocally(tracks[safeIndex], positionSeconds);
+  }, [playTrackLocally]);
+
+  const connectPlaybackTo = useCallback(async (targetSessionId: string, deviceName: string) => {
+    const activeQueue = queueRef.current.length > 0
+      ? queueRef.current
+      : currentTrack
+        ? [currentTrack]
+        : [];
+    if (activeQueue.length === 0) {
+      throw new Error('Select a track before connecting to another device');
+    }
+
+    const activeIndex = Math.max(0, Math.min(currentTrackIndexRef.current, activeQueue.length - 1));
+    const positionSeconds = audioService.getCurrentTime() || currentTime || 0;
+    await sendPlaybackCommand(targetSessionId, activeQueue, activeIndex, positionSeconds);
+    setConnectedPlaybackSessionId(targetSessionId);
+    setConnectedPlaybackDeviceName(deviceName);
+    setControlledByPlaybackSessionId(null);
+    connectedPlaybackSessionIdRef.current = targetSessionId;
+    setPlaylistQueue(activeQueue);
+    setCurrentTrackIndex(activeIndex);
+    setCurrentTrack(activeQueue[activeIndex]);
+    setCurrentTime(positionSeconds);
+    setDuration(activeQueue[activeIndex]?.duration || duration);
+    audioService.pause();
+    setIsPlaying(true);
+    startRemoteProgressClock();
+  }, [currentTime, currentTrack, duration, sendPlaybackCommand, startRemoteProgressClock]);
+
+  const returnPlaybackToThisDevice = useCallback(async () => {
+    const wasConnected = Boolean(connectedPlaybackSessionIdRef.current);
+    setConnectedPlaybackSessionId(null);
+    setConnectedPlaybackDeviceName('');
+    setControlledByPlaybackSessionId(null);
+    connectedPlaybackSessionIdRef.current = null;
+    stopRemoteProgressClock();
+    if (!wasConnected || !currentTrack) {
+      return;
+    }
+
+    try {
+      await audioService.setTrack(currentTrack, isPlaying);
+      if (currentTime > 0) {
+        audioService.seekTo(currentTime);
+      }
+    } catch (error) {
+      console.error('Failed to return playback to this device:', error);
+    }
+  }, [currentTime, currentTrack, isPlaying, stopRemoteProgressClock]);
+
+  useEffect(() => {
+    if (authLoading || !user || !token) {
+      return;
+    }
+    let cancelled = false;
+    let inFlight = false;
+
+    const pollForHandoff = async () => {
+      if (inFlight || cancelled) {
+        return;
+      }
+      inFlight = true;
+      try {
+        const command = await playbackConnectAPI.consumePending();
+        if (!command || cancelled) {
+          return;
+        }
+        setConnectedPlaybackSessionId(null);
+        setConnectedPlaybackDeviceName('');
+        connectedPlaybackSessionIdRef.current = null;
+        stopRemoteProgressClock();
+        if (command.source_session_id) {
+          setControlledByPlaybackSessionId(command.source_session_id);
+        }
+        if (command.action === 'toggle_play_pause') {
+          await audioService.togglePlayPause();
+          return;
+        }
+        if (command.action === 'seek') {
+          audioService.seekTo((command.position_ms ?? 0) / 1000);
+          return;
+        }
+        if (command.track_ids.length === 0) {
+          return;
+        }
+        let queue = command.tracks ?? [];
+        if (queue.length === 0) {
+          const library = await musicAPI.getAllMusic();
+          if (cancelled) {
+            return;
+          }
+          const tracksById = new Map(library.map(track => [track.id, track]));
+          queue = command.track_ids
+            .map(trackId => tracksById.get(trackId))
+            .filter((track): track is Music => Boolean(track));
+        }
+        if (queue.length > 0) {
+          playLocalFromQueueAt(queue, command.start_index, (command.position_ms ?? 0) / 1000);
+        }
+      } catch (error) {
+        console.warn('Could not receive playback handoff:', error);
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void pollForHandoff();
+    const interval = window.setInterval(() => void pollForHandoff(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [authLoading, playLocalFromQueueAt, stopRemoteProgressClock, token, user]);
 
   const playPlaylistShuffled = (tracks: Music[]) => {
     if (tracks.length > 0) {
       // Create a shuffled copy of tracks array
       const shuffledTracks = [...tracks].sort(() => Math.random() - 0.5);
-      setPlaylistQueue(shuffledTracks);
-      setCurrentTrackIndex(0);
-      playTrack(shuffledTracks[0]);
+      playFromQueue(shuffledTracks, 0);
     }
   };
 
@@ -403,8 +751,7 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
 
   const playTrackFromQueue = (index: number) => {
     if (index >= 0 && index < playlistQueue.length) {
-      setCurrentTrackIndex(index);
-      playTrack(playlistQueue[index]);
+      playFromQueue(playlistQueue, index);
     }
   };
 
@@ -477,6 +824,7 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
     volume,
     isLoading,
     playTrack,
+    playFromQueue,
     playPlaylist,
     playPlaylistShuffled,
     addToQueue,
@@ -499,6 +847,11 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
     recentlyPlayed,
     queue: playlistQueue,
     currentTrackIndex,
+    connectedPlaybackSessionId,
+    connectedPlaybackDeviceName,
+    controlledByPlaybackSessionId,
+    connectPlaybackTo,
+    returnPlaybackToThisDevice,
   };
 
   return <AudioContext.Provider value={value}>{children}</AudioContext.Provider>;

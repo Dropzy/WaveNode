@@ -2,10 +2,32 @@ import axios from 'axios'
 import { notifyPlaylistsChanged } from '../utils/playlistEvents'
 
 const configuredApiBaseUrl = (globalThis as { MUSIC_SERVER_API_BASE_URL?: string }).MUSIC_SERVER_API_BASE_URL
+const isWaveNodeDesktop = Boolean(window.WAVENODE_DESKTOP)
+export const DESKTOP_SERVER_STORAGE_KEY = 'wavenode_desktop_server_url'
 
-export const API_BASE_URL = configuredApiBaseUrl || import.meta.env.VITE_API_BASE_URL || '/api'
+export const normalizeServerUrl = (value: string): string => {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return ''
+  }
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`
+  return withProtocol.replace(/\/api\/?$/i, '').replace(/\/+$/, '')
+}
 
-export const API_ORIGIN = new URL(API_BASE_URL, window.location.origin).origin
+export const serverUrlToApiBaseUrl = (serverUrl: string): string => {
+  const normalized = normalizeServerUrl(serverUrl)
+  return normalized ? `${normalized}/api` : ''
+}
+
+const savedDesktopServerUrl = isWaveNodeDesktop ? localStorage.getItem(DESKTOP_SERVER_STORAGE_KEY) || '' : ''
+const savedDesktopApiBaseUrl = savedDesktopServerUrl ? serverUrlToApiBaseUrl(savedDesktopServerUrl) : ''
+
+export let API_BASE_URL = savedDesktopApiBaseUrl || configuredApiBaseUrl || import.meta.env.VITE_API_BASE_URL || '/api'
+
+export let API_ORIGIN = new URL(API_BASE_URL, window.location.origin).origin
+
+const playbackClientSource = isWaveNodeDesktop ? 'desktop' : 'web'
+const playbackClientDevice = isWaveNodeDesktop ? 'WaveNode desktop app' : ''
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -13,6 +35,23 @@ export const api = axios.create({
     'Content-Type': 'application/json',
   },
 })
+
+export const setApiBaseUrl = (baseUrl: string) => {
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '')
+  API_BASE_URL = normalizedBaseUrl
+  API_ORIGIN = new URL(normalizedBaseUrl, window.location.origin).origin
+  api.defaults.baseURL = normalizedBaseUrl
+}
+
+export const setDesktopServerUrl = (serverUrl: string) => {
+  const normalizedServerUrl = normalizeServerUrl(serverUrl)
+  if (!normalizedServerUrl) {
+    throw new Error('Enter a WaveNode server address')
+  }
+  localStorage.setItem(DESKTOP_SERVER_STORAGE_KEY, normalizedServerUrl)
+  setApiBaseUrl(serverUrlToApiBaseUrl(normalizedServerUrl))
+  return normalizedServerUrl
+}
 
 export interface Music {
   id: string
@@ -82,6 +121,47 @@ export interface Playlist {
   updated_at: string
 }
 
+export interface PluginRadioMetadata {
+  station_title: string
+  stream_title: string
+  error?: string
+}
+
+export interface PluginTrackAction {
+  plugin_id: string
+  id: string
+  label: string
+  icon?: string
+  action_type: 'download'
+  url: string
+}
+
+export interface DiscoverySettings {
+  listenbrainz_user: string
+}
+
+export interface DiscoveryRecommendation {
+  title: string
+  artist: string
+  album: string
+  source_playlist: string
+  matched_track_id?: string
+}
+
+export interface DiscoveryPreview {
+  source: string
+  listenbrainz_url: string
+  total: number
+  matched: Music[]
+  missing: DiscoveryRecommendation[]
+  recommendations: DiscoveryRecommendation[]
+}
+
+export interface DiscoveryImportResult {
+  playlist: Playlist
+  preview: DiscoveryPreview
+}
+
 export interface SmartPlaylistCondition {
   field: 'title' | 'artist' | 'album' | 'genre' | 'year' | 'duration' | 'play_count' | 'rating' | 'date_added' | 'liked' | 'has_artwork'
   operator: string
@@ -111,6 +191,24 @@ export interface PlaybackProfile {
   transcode_bitrate: number
 }
 
+export interface ScrobbleSettings {
+  listenbrainz_enabled: boolean
+  has_listenbrainz_token: boolean
+  listenbrainz_token?: string
+  lastfm_enabled: boolean
+  lastfm_server_configured: boolean
+  lastfm_username?: string
+  has_lastfm_session_key: boolean
+  has_lastfm_pending_token: boolean
+}
+
+export interface LastFMIntegrationSettings {
+  api_key: string
+  shared_secret?: string
+  has_shared_secret: boolean
+  configured: boolean
+}
+
 export interface UserSession {
   id: string
   device_name: string
@@ -120,6 +218,18 @@ export interface UserSession {
   created_at: string
   expires_at: string
   revoked_at?: string
+}
+
+export interface PlaybackHandoffCommand {
+  id: string
+  source_session_id: string
+  target_session_id: string
+  track_ids: string[]
+  tracks?: Music[]
+  start_index: number
+  action?: 'play_queue' | 'toggle_play_pause' | 'seek'
+  position_ms?: number
+  created_at: string
 }
 
 export interface ListeningHistoryEntry {
@@ -196,6 +306,8 @@ export interface ArtistInfo {
 export interface Artist {
   id: string
   name: string
+  track_count?: number
+  album_count?: number
   spotify_id: string
   spotify_url: string
   image_url: string
@@ -215,6 +327,39 @@ export interface Artist {
   last_enriched_at: string
   created_at: string
   updated_at: string
+}
+
+export interface ArtistImage {
+  id: number
+  artist_id: string
+  source: string
+  image_url: string
+  thumbnail_url?: string
+  source_page_url?: string
+  license_name?: string
+  license_url?: string
+  author_name?: string
+  attribution_text?: string
+  width: number
+  height: number
+  mime_type?: string
+  confidence_score: number
+  is_primary: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ArtistLookupResult {
+  artist: {
+    mbid: string
+    name: string
+    country?: string
+    wikidata_id?: string
+    confidence_score: number
+  }
+  image?: ArtistImage
+  candidates: ArtistImage[]
+  refreshed: boolean
 }
 
 export interface ArtistTracksResponse {
@@ -269,8 +414,17 @@ export interface APIResponse<T> {
 
 export interface SearchResult {
   songs: Music[]
-  albums: Array<{ name: string; artist: string; year: number }>
-  artists: Array<{ id?: string; name: string; track_count: number; album_count: number }>
+  albums: Album[]
+  artists: Array<{
+    id?: string
+    name: string
+    track_count: number
+    album_count: number
+    image_url?: string
+    image_small_url?: string
+    image_medium_url?: string
+    image_large_url?: string
+  }>
   playlists: Playlist[]
 }
 
@@ -279,12 +433,78 @@ export const pluginsAPI = {
     const response = await api.get<APIResponse<PluginHomeRow[]>>('/plugins/home-rows')
     return response.data.data || []
   },
+
+  getRadioMetadata: async (streamUrl: string): Promise<PluginRadioMetadata | null> => {
+    const response = await api.get<APIResponse<PluginRadioMetadata>>('/plugins/radio-metadata', {
+      params: { stream_url: streamUrl },
+    })
+    return response.data.data || null
+  },
+
+  getTrackActions: async (): Promise<PluginTrackAction[]> => {
+    const response = await api.get<APIResponse<PluginTrackAction[]>>('/plugins/track-actions')
+    return response.data.data || []
+  },
+}
+
+export const discoveryAPI = {
+  getSettings: async (): Promise<DiscoverySettings> => {
+    const response = await api.get<APIResponse<DiscoverySettings>>('/discovery/settings')
+    return response.data.data || { listenbrainz_user: '' }
+  },
+
+  saveSettings: async (settings: DiscoverySettings): Promise<DiscoverySettings> => {
+    const response = await api.put<APIResponse<DiscoverySettings>>('/discovery/settings', settings)
+    return response.data.data || settings
+  },
+
+  preview: async (source = 'weekly-exploration'): Promise<DiscoveryPreview> => {
+    const response = await api.get<APIResponse<DiscoveryPreview>>('/discovery/preview', { params: { source } })
+    if (!response.data.data) {
+      throw new Error(response.data.error || 'Discovery preview was not returned')
+    }
+    return response.data.data
+  },
+
+  importPlaylist: async (source = 'weekly-exploration', playlistName?: string): Promise<DiscoveryImportResult> => {
+    const response = await api.post<APIResponse<DiscoveryImportResult>>('/discovery/import', {
+      source,
+      playlist_name: playlistName,
+    })
+    if (!response.data.data) {
+      throw new Error(response.data.error || 'Discovery playlist was not created')
+    }
+    notifyPlaylistsChanged()
+    return response.data.data
+  },
 }
 
 export const musicAPI = {
   getAllMusic: async (): Promise<Music[]> => {
     const response = await api.get<APIResponse<Music[]>>('/music')
     return response.data.data || []
+  },
+
+  downloadMusic: async (id: string, fallbackFilename = 'track'): Promise<void> => {
+    const response = await api.get<Blob>(`/music/${id}/download`, {
+      responseType: 'blob',
+    })
+    const contentDispositionHeader = response.headers['content-disposition']
+    const contentDisposition = typeof contentDispositionHeader === 'string' ? contentDispositionHeader : ''
+    const filenameMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^"]+)"?/i)
+    const filename = decodeURIComponent(filenameMatch?.[1] || filenameMatch?.[2] || fallbackFilename)
+    const contentTypeHeader = response.headers['content-type']
+    const blob = new Blob([response.data], {
+      type: typeof contentTypeHeader === 'string' ? contentTypeHeader : 'application/octet-stream',
+    })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
   },
 
   getMusic: async (id: string): Promise<Music | null> => {
@@ -440,6 +660,34 @@ export const artistAPI = {
     }
     return null
   },
+
+  lookup: async (name: string): Promise<ArtistLookupResult | null> => {
+    const response = await api.get<APIResponse<ArtistLookupResult>>('/artists/lookup', { params: { name } })
+    return response.data.data || null
+  },
+
+  getImage: async (artistId: string): Promise<ArtistImage | null> => {
+    const response = await api.get<APIResponse<ArtistImage | { image: null }>>(`/artists/${encodeURIComponent(artistId)}/image`)
+    const data = response.data.data
+    return data && 'image_url' in data ? data : null
+  },
+}
+
+export const adminArtistImagesAPI = {
+  refreshMetadata: async (artistId: string): Promise<ArtistLookupResult | null> => {
+    const response = await api.post<APIResponse<ArtistLookupResult>>(`/admin/artists/${encodeURIComponent(artistId)}/refresh-metadata`)
+    return response.data.data || null
+  },
+
+  listCandidates: async (artistId: string): Promise<ArtistImage[]> => {
+    const response = await api.get<APIResponse<ArtistImage[]>>(`/admin/artists/${encodeURIComponent(artistId)}/image-candidates`)
+    return response.data.data || []
+  },
+
+  setPrimary: async (artistId: string, imageId: number): Promise<ArtistImage | null> => {
+    const response = await api.put<APIResponse<ArtistImage>>(`/admin/artists/${encodeURIComponent(artistId)}/image-primary`, { image_id: imageId })
+    return response.data.data || null
+  },
 }
 
 export const playlistAPI = {
@@ -543,6 +791,85 @@ export const accountAPI = {
   },
   revokeSession: async (id: string) => api.delete(`/auth/sessions/${id}`),
   revokeOtherSessions: async () => api.delete('/auth/sessions/others'),
+  getScrobbleSettings: async (): Promise<ScrobbleSettings> => {
+    const response = await api.get<APIResponse<ScrobbleSettings>>('/scrobble/settings')
+    return response.data.data || {
+      listenbrainz_enabled: false,
+      has_listenbrainz_token: false,
+      lastfm_enabled: false,
+      lastfm_server_configured: false,
+      has_lastfm_session_key: false,
+      has_lastfm_pending_token: false,
+    }
+  },
+  saveScrobbleSettings: async (settings: ScrobbleSettings): Promise<ScrobbleSettings> => {
+    const response = await api.put<APIResponse<ScrobbleSettings>>('/scrobble/settings', settings)
+    return response.data.data || settings
+  },
+  startLastFMAuth: async (): Promise<{ auth_url: string }> => {
+    const response = await api.post<APIResponse<{ auth_url: string }>>('/scrobble/lastfm/start')
+    if (!response.data.data) {
+      throw new Error(response.data.error || 'Last.fm connection could not be started')
+    }
+    return response.data.data
+  },
+  completeLastFMAuth: async (token?: string): Promise<ScrobbleSettings> => {
+    const response = await api.post<APIResponse<ScrobbleSettings>>('/scrobble/lastfm/complete', token ? { token } : {})
+    if (!response.data.data) {
+      throw new Error(response.data.error || 'Last.fm connection could not be completed')
+    }
+    return response.data.data
+  },
+  disconnectLastFM: async (): Promise<ScrobbleSettings> => {
+    const response = await api.delete<APIResponse<ScrobbleSettings>>('/scrobble/lastfm')
+    if (!response.data.data) {
+      throw new Error(response.data.error || 'Last.fm connection could not be disconnected')
+    }
+    return response.data.data
+  },
+}
+
+export const playbackConnectAPI = {
+  createHandoff: async (
+    targetSessionId: string,
+    trackIds: string[],
+    startIndex: number,
+    positionMs = 0,
+    action: 'play_queue' | 'toggle_play_pause' | 'seek' = 'play_queue',
+  ): Promise<PlaybackHandoffCommand | null> => {
+    const response = await api.post<APIResponse<PlaybackHandoffCommand>>('/playback/connect', {
+      target_session_id: targetSessionId,
+      track_ids: trackIds,
+      start_index: startIndex,
+      position_ms: positionMs,
+      action,
+    })
+    return response.data.data || null
+  },
+  consumePending: async (): Promise<PlaybackHandoffCommand | null> => {
+    const response = await api.get<APIResponse<PlaybackHandoffCommand | null>>('/playback/connect/pending')
+    return response.data.data || null
+  },
+}
+
+export const adminIntegrationsAPI = {
+  getLastFM: async (): Promise<LastFMIntegrationSettings> => {
+    const response = await api.get<APIResponse<LastFMIntegrationSettings>>('/admin/integrations/lastfm')
+    return response.data.data || { api_key: '', has_shared_secret: false, configured: false }
+  },
+  saveLastFM: async (settings: LastFMIntegrationSettings): Promise<LastFMIntegrationSettings> => {
+    const response = await api.put<APIResponse<LastFMIntegrationSettings>>('/admin/integrations/lastfm', settings)
+    return response.data.data || settings
+  },
+}
+
+export const scrobbleAPI = {
+  nowPlaying: async (trackId: string): Promise<void> => {
+    await api.post(`/scrobble/now-playing/${encodeURIComponent(trackId)}`)
+  },
+  listened: async (trackId: string, listenedAt?: number): Promise<void> => {
+    await api.post(`/scrobble/listened/${encodeURIComponent(trackId)}`, listenedAt ? { listened_at: listenedAt } : {})
+  },
 }
 
 export const historyAPI = {
@@ -666,7 +993,12 @@ export const recentlyPlayedAPI = {
   },
 
   addRecentlyPlayed: async (trackId: string): Promise<boolean> => {
-    const response = await api.post<APIResponse<null>>(`/recently-played/${trackId}`)
+    const response = await api.post<APIResponse<null>>(`/recently-played/${trackId}`, null, {
+      params: {
+        source: playbackClientSource,
+        ...(playbackClientDevice ? { device: playbackClientDevice } : {}),
+      },
+    })
     return response.data.success
   },
 }

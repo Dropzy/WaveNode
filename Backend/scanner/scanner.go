@@ -407,11 +407,14 @@ func (s *Scanner) processBatch(ctx context.Context, scanID string, files []strin
 			Source:              trackInfo.Source,
 		}
 		applyScannedArtwork(song, artworkURL)
-		artist, artistErr := s.db.ArtistOrStoreArtist(song.Artist)
-		if artistErr != nil {
-			log.Printf("Warning: Failed to link artist %q for %s: %v", song.Artist, filePath, artistErr)
-		} else {
-			song.ArtistID = artist.ID
+		primaryArtistName := database.PrimaryArtistName(song.Artist)
+		if primaryArtistName != "" {
+			artist, artistErr := s.db.ArtistOrStoreArtist(primaryArtistName)
+			if artistErr != nil {
+				log.Printf("Warning: Failed to link artist %q for %s: %v", primaryArtistName, filePath, artistErr)
+			} else {
+				song.ArtistID = artist.ID
+			}
 		}
 
 		// Check for existing record

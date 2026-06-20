@@ -23,6 +23,26 @@ func requestUserID(req *http.Request) string {
 	return userID
 }
 
+type playbackHandoffRequest struct {
+	TargetSessionID string   `json:"target_session_id"`
+	TrackIDs        []string `json:"track_ids"`
+	StartIndex      int      `json:"start_index"`
+	Action          string   `json:"action"`
+	PositionMs      int64    `json:"position_ms"`
+}
+
+type playbackHandoffCommand struct {
+	ID              string           `json:"id"`
+	SourceSessionID string           `json:"source_session_id"`
+	TargetSessionID string           `json:"target_session_id"`
+	TrackIDs        []string         `json:"track_ids"`
+	Tracks          []database.Music `json:"tracks,omitempty"`
+	StartIndex      int              `json:"start_index"`
+	Action          string           `json:"action"`
+	PositionMs      int64            `json:"position_ms,omitempty"`
+	CreatedAt       time.Time        `json:"created_at"`
+}
+
 func (r *Router) getPlaybackProfile(w http.ResponseWriter, req *http.Request) {
 	profile, err := r.db.GetPlaybackProfile(requestUserID(req))
 	if err != nil {
@@ -45,6 +65,98 @@ func (r *Router) updatePlaybackProfile(w http.ResponseWriter, req *http.Request)
 	}
 	saved, _ := r.db.GetPlaybackProfile(profile.UserID)
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "data": saved})
+}
+
+func (r *Router) createPlaybackHandoff(w http.ResponseWriter, req *http.Request) {
+	userID := requestUserID(req)
+	sourceSessionID, _ := req.Context().Value("session_id").(string)
+	var payload playbackHandoffRequest
+	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid playback handoff request")
+		return
+	}
+	payload.TargetSessionID = strings.TrimSpace(payload.TargetSessionID)
+	if payload.TargetSessionID == "" || payload.TargetSessionID == sourceSessionID {
+		writeJSONError(w, http.StatusBadRequest, "Select another WaveNode device")
+		return
+	}
+	payload.Action = strings.TrimSpace(payload.Action)
+	if payload.Action == "" {
+		payload.Action = "play_queue"
+	}
+	if payload.Action != "play_queue" && payload.Action != "toggle_play_pause" && payload.Action != "seek" {
+		writeJSONError(w, http.StatusBadRequest, "Unsupported playback command")
+		return
+	}
+	if payload.Action == "play_queue" {
+		if len(payload.TrackIDs) == 0 {
+			writeJSONError(w, http.StatusBadRequest, "No tracks were provided")
+			return
+		}
+		if payload.StartIndex < 0 || payload.StartIndex >= len(payload.TrackIDs) {
+			payload.StartIndex = 0
+		}
+	}
+	sessions, err := r.db.GetUserSessions(userID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Could not load connected devices")
+		return
+	}
+	targetActive := false
+	activeCutoff := time.Now().Add(-15 * time.Minute)
+	for _, session := range sessions {
+		if session.ID == payload.TargetSessionID && session.LastSeenAt.After(activeCutoff) {
+			targetActive = true
+			break
+		}
+	}
+	if !targetActive {
+		writeJSONError(w, http.StatusNotFound, "That WaveNode device is not available")
+		return
+	}
+	tracks := make([]database.Music, 0, len(payload.TrackIDs))
+	if payload.Action == "play_queue" {
+		for _, trackID := range payload.TrackIDs {
+			track, err := r.db.GetMusic(trackID)
+			if err == nil && track != nil {
+				tracks = append(tracks, *track)
+			}
+		}
+		if len(tracks) == 0 {
+			writeJSONError(w, http.StatusBadRequest, "No playable library tracks were provided")
+			return
+		}
+		if payload.StartIndex >= len(tracks) {
+			payload.StartIndex = 0
+		}
+	}
+	command := playbackHandoffCommand{
+		ID:              fmt.Sprintf("handoff_%d", time.Now().UnixNano()),
+		SourceSessionID: sourceSessionID,
+		TargetSessionID: payload.TargetSessionID,
+		TrackIDs:        payload.TrackIDs,
+		Tracks:          tracks,
+		StartIndex:      payload.StartIndex,
+		Action:          payload.Action,
+		PositionMs:      payload.PositionMs,
+		CreatedAt:       time.Now(),
+	}
+	r.playbackHandoffs.Store(payload.TargetSessionID, command)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "data": command})
+}
+
+func (r *Router) consumePlaybackHandoff(w http.ResponseWriter, req *http.Request) {
+	sessionID, _ := req.Context().Value("session_id").(string)
+	if sessionID == "" {
+		writeJSONError(w, http.StatusUnauthorized, "Session is required")
+		return
+	}
+	value, ok := r.playbackHandoffs.LoadAndDelete(sessionID)
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "data": nil})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "data": value})
 }
 
 func (r *Router) getListeningHistory(w http.ResponseWriter, req *http.Request) {

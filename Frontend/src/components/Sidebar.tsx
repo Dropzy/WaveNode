@@ -11,7 +11,9 @@ const SidebarContainer = styled.aside.withConfig({
   shouldForwardProp: (prop) => prop !== 'isOpen',
 })<{ isOpen: boolean }>`
   width: 240px;
-  background-color: #000000;
+  background:
+    linear-gradient(180deg, ${({ theme }) => theme.colors.backgroundElevated}, ${({ theme }) => theme.colors.background});
+  border-right: 1px solid ${({ theme }) => theme.colors.border};
   padding: 24px 16px;
   display: flex;
   flex-direction: column;
@@ -33,7 +35,10 @@ const SidebarContainer = styled.aside.withConfig({
 const Logo = styled.div`
   font-size: 24px;
   font-weight: bold;
-  color: #1db954;
+  background: ${({ theme }) => theme.colors.accentGradient};
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
   margin-bottom: 24px;
   
   @media (max-width: 768px) {
@@ -52,21 +57,22 @@ const NavItem = styled(NavLink)`
   align-items: center;
   gap: 16px;
   padding: 12px 16px;
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   text-decoration: none;
-  border-radius: 4px;
+  border-radius: 14px;
   transition: all 0.2s ease;
   font-size: 14px;
   font-weight: 600;
 
   &:hover {
-    color: #fff;
-    background-color: #282828;
+    color: ${({ theme }) => theme.colors.text};
+    background: ${({ theme }) => theme.colors.controlBg};
   }
 
   &.active {
-    color: #fff;
-    background-color: #282828;
+    color: ${({ theme }) => theme.colors.text};
+    background: ${({ theme }) => theme.colors.surfaceSoft};
+    box-shadow: inset 0 0 0 1px ${({ theme }) => theme.colors.border};
   }
 
   svg {
@@ -77,7 +83,7 @@ const NavItem = styled(NavLink)`
 
 const Divider = styled.hr`
   border: none;
-  border-top: 1px solid #282828;
+  border-top: 1px solid ${({ theme }) => theme.colors.border};
   margin: 0;
 `
 
@@ -95,11 +101,30 @@ const PlaylistHeader = styled.div`
 `
 
 const PlaylistTitle = styled.h3`
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1.5px;
+`
+
+const PlaylistHeaderAction = styled.button`
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 999px;
+  color: ${({ theme }) => theme.colors.muted};
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    color: ${({ theme }) => theme.colors.text};
+    border-color: ${({ theme }) => theme.colors.borderStrong};
+    background: ${({ theme }) => theme.colors.controlBg};
+  }
 `
 
 const CreatePlaylistButton = styled.button`
@@ -108,10 +133,10 @@ const CreatePlaylistButton = styled.button`
   justify-content: center;
   gap: 8px;
   padding: 10px 16px;
-  color: #fff;
-  background-color: #1db954;
-  border: none;
-  border-radius: 20px;
+  color: ${({ theme }) => theme.colors.accentText};
+  background: ${({ theme }) => theme.colors.accentGradient};
+  border: 1px solid transparent;
+  border-radius: 999px;
   cursor: pointer;
   transition: all 0.2s ease;
   font-size: 14px;
@@ -119,12 +144,13 @@ const CreatePlaylistButton = styled.button`
   width: 100%;
 
   &:hover {
-    background-color: #1ed760;
+    filter: brightness(1.08);
     transform: scale(1.02);
   }
 
   &:disabled {
-    background-color: #5e5e5e;
+    background: ${({ theme }) => theme.colors.surfaceStrong};
+    color: ${({ theme }) => theme.colors.subtle};
     cursor: not-allowed;
     transform: none;
   }
@@ -132,17 +158,6 @@ const CreatePlaylistButton = styled.button`
   svg {
     width: 20px;
     height: 20px;
-  }
-`
-
-const CreateSmartPlaylistButton = styled(CreatePlaylistButton)`
-  color: #d8fbe4;
-  background: #15271c;
-  border: 1px solid #2f6f46;
-
-  &:hover {
-    background: #1b3525;
-    border-color: #1ed760;
   }
 `
 
@@ -162,12 +177,12 @@ const PlaylistList = styled.div`
   }
   
   &::-webkit-scrollbar-thumb {
-    background: #404040;
+    background: ${({ theme }) => theme.colors.borderStrong};
     border-radius: 3px;
   }
   
   &::-webkit-scrollbar-thumb:hover {
-    background: #5a5a5a;
+    background: ${({ theme }) => theme.colors.accent};
   }
 `
 
@@ -176,21 +191,21 @@ const PlaylistItem = styled(NavLink)`
   align-items: center;
   gap: 12px;
   padding: 8px 12px;
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   text-decoration: none;
-  border-radius: 4px;
+  border-radius: 12px;
   transition: all 0.2s ease;
   font-size: 13px;
   font-weight: 500;
 
   &:hover {
-    color: #fff;
-    background-color: #282828;
+    color: ${({ theme }) => theme.colors.text};
+    background: ${({ theme }) => theme.colors.controlBg};
   }
 
   &.active {
-    color: #fff;
-    background-color: #282828;
+    color: ${({ theme }) => theme.colors.text};
+    background: ${({ theme }) => theme.colors.surfaceSoft};
   }
 
   svg {
@@ -208,7 +223,7 @@ const PlaylistName = styled.span`
 `
 
 const PlaylistTrackCount = styled.span`
-  color: #808080;
+  color: ${({ theme }) => theme.colors.subtle};
   font-size: 11px;
   white-space: nowrap;
 `
@@ -218,18 +233,18 @@ const LikedSongsButton = styled.button`
   align-items: center;
   gap: 16px;
   padding: 12px 16px;
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   background: none;
   border: none;
-  border-radius: 4px;
+  border-radius: 14px;
   cursor: pointer;
   transition: all 0.2s ease;
   font-size: 14px;
   font-weight: 600;
 
   &:hover {
-    color: #fff;
-    background-color: #282828;
+    color: ${({ theme }) => theme.colors.text};
+    background: ${({ theme }) => theme.colors.controlBg};
   }
 
   svg {
@@ -245,7 +260,7 @@ const ModalOverlay = styled.div`
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: ${({ theme }) => theme.colors.overlay};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -254,12 +269,13 @@ const ModalOverlay = styled.div`
 `
 
 const ModalContent = styled.div`
-  background-color: #282828;
-  border-radius: 8px;
+  background: ${({ theme }) => theme.colors.surface};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 18px;
   padding: 32px;
   width: 90%;
   max-width: 500px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 24px 70px ${({ theme }) => theme.colors.shadow};
   
   @media (max-width: 768px) {
     padding: 24px;
@@ -276,7 +292,7 @@ const ModalHeader = styled.div`
 `
 
 const ModalTitle = styled.h2`
-  color: #fff;
+  color: ${({ theme }) => theme.colors.text};
   font-size: 24px;
   font-weight: 700;
   margin: 0;
@@ -285,7 +301,7 @@ const ModalTitle = styled.h2`
 const CloseButton = styled.button`
   background: none;
   border: none;
-  color: #b3b3b3;
+  color: ${({ theme }) => theme.colors.muted};
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
@@ -295,8 +311,8 @@ const CloseButton = styled.button`
   justify-content: center;
 
   &:hover {
-    background-color: #383838;
-    color: #fff;
+    background-color: ${({ theme }) => theme.colors.controlBg};
+    color: ${({ theme }) => theme.colors.text};
   }
 `
 
@@ -306,7 +322,7 @@ const FormGroup = styled.div`
 
 const Label = styled.label`
   display: block;
-  color: #fff;
+  color: ${({ theme }) => theme.colors.text};
   font-size: 14px;
   font-weight: 600;
   margin-bottom: 8px;
@@ -315,31 +331,31 @@ const Label = styled.label`
 const Input = styled.input`
   width: 100%;
   padding: 12px 16px;
-  background-color: #3e3e3e;
-  border: 1px solid #5e5e5e;
-  border-radius: 4px;
-  color: #fff;
+  background-color: ${({ theme }) => theme.colors.backgroundElevated};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 12px;
+  color: ${({ theme }) => theme.colors.text};
   font-size: 14px;
   transition: all 0.2s ease;
 
   &:focus {
     outline: none;
-    border-color: #1db954;
-    background-color: #4e4e4e;
+    border-color: ${({ theme }) => theme.colors.accent};
+    background-color: ${({ theme }) => theme.colors.surfaceStrong};
   }
 
   &::placeholder {
-    color: #b3b3b3;
+    color: ${({ theme }) => theme.colors.subtle};
   }
 `
 
 const Textarea = styled.textarea`
   width: 100%;
   padding: 12px 16px;
-  background-color: #3e3e3e;
-  border: 1px solid #5e5e5e;
-  border-radius: 4px;
-  color: #fff;
+  background-color: ${({ theme }) => theme.colors.backgroundElevated};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 12px;
+  color: ${({ theme }) => theme.colors.text};
   font-size: 14px;
   font-family: inherit;
   resize: vertical;
@@ -348,12 +364,12 @@ const Textarea = styled.textarea`
 
   &:focus {
     outline: none;
-    border-color: #1db954;
-    background-color: #4e4e4e;
+    border-color: ${({ theme }) => theme.colors.accent};
+    background-color: ${({ theme }) => theme.colors.surfaceStrong};
   }
 
   &::placeholder {
-    color: #b3b3b3;
+    color: ${({ theme }) => theme.colors.subtle};
   }
 `
 
@@ -375,30 +391,77 @@ const Button = styled.button<{ $variant?: 'primary' | 'secondary' }>`
   min-width: 100px;
 
   ${props => props.$variant === 'primary' ? `
-    background-color: #1db954;
-    color: #fff;
+    background: ${props.theme.colors.accentGradient};
+    color: ${props.theme.colors.accentText};
 
     &:hover {
-      background-color: #1ed760;
+      filter: brightness(1.08);
       transform: scale(1.05);
     }
 
     &:disabled {
-      background-color: #5e5e5e;
+      background: ${props.theme.colors.surfaceStrong};
+      color: ${props.theme.colors.subtle};
       cursor: not-allowed;
       transform: none;
     }
   ` : `
     background-color: transparent;
-    color: #b3b3b3;
-    border: 1px solid #5e5e5e;
+    color: ${props.theme.colors.muted};
+    border: 1px solid ${props.theme.colors.border};
 
     &:hover {
-      background-color: #383838;
-      color: #fff;
-      border-color: #b3b3b3;
+      background-color: ${props.theme.colors.controlBg};
+      color: ${props.theme.colors.text};
+      border-color: ${props.theme.colors.borderStrong};
     }
   `}
+`
+
+const ErrorText = styled.div`
+  color: ${({ theme }) => theme.colors.danger};
+  font-size: 14px;
+  margin-bottom: 16px;
+`
+
+const PlaylistTypeGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+
+  @media (max-width: 520px) {
+    grid-template-columns: 1fr;
+  }
+`
+
+const PlaylistTypeButton = styled.button<{ $selected?: boolean }>`
+  display: grid;
+  gap: 6px;
+  min-height: 92px;
+  padding: 14px;
+  border: 1px solid ${({ theme, $selected }) => $selected ? theme.colors.borderStrong : theme.colors.border};
+  border-radius: 14px;
+  color: ${({ theme }) => theme.colors.text};
+  background: ${({ theme, $selected }) => $selected ? theme.colors.accentSoft : theme.colors.backgroundElevated};
+  text-align: left;
+  transition: all 0.2s ease;
+
+  strong {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  span {
+    color: ${({ theme }) => theme.colors.muted};
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  &:hover {
+    border-color: ${({ theme }) => theme.colors.borderStrong};
+    background: ${({ theme }) => theme.colors.controlBg};
+  }
 `
 
 interface SidebarProps {
@@ -414,6 +477,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [playlistName, setPlaylistName] = useState('')
   const [playlistDescription, setPlaylistDescription] = useState('')
+  const [playlistType, setPlaylistType] = useState<'manual' | 'smart'>('manual')
   const [isCreating, setIsCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   
@@ -481,6 +545,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       return
     }
 
+    if (playlistType === 'smart') {
+      const params = new URLSearchParams({
+        name: playlistName.trim(),
+      })
+      if (playlistDescription.trim()) {
+        params.set('description', playlistDescription.trim())
+      }
+      setShowCreateModal(false)
+      setPlaylistName('')
+      setPlaylistDescription('')
+      setPlaylistType('manual')
+      setCreateError(null)
+      navigate(`/smart-playlist/new?${params.toString()}`)
+      return
+    }
+
     setIsCreating(true)
     setCreateError(null)
 
@@ -522,6 +602,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const handleOpenCreateModal = () => {
     setPlaylistName('')
     setPlaylistDescription('')
+    setPlaylistType('manual')
     setCreateError(null)
     setShowCreateModal(true)
     // Close sidebar on mobile when opening modal
@@ -535,6 +616,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       setShowCreateModal(false)
       setPlaylistName('')
       setPlaylistDescription('')
+      setPlaylistType('manual')
       setCreateError(null)
     }
   }
@@ -605,19 +687,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         <PlaylistSection>
           <PlaylistHeader>
             <PlaylistTitle>Playlists</PlaylistTitle>
+            <PlaylistHeaderAction
+              type="button"
+              onClick={() => importPlaylistInput.current?.click()}
+              aria-label="Import M3U playlist"
+              title="Import M3U playlist"
+            >
+              <Upload size={16} />
+            </PlaylistHeaderAction>
           </PlaylistHeader>
           <CreatePlaylistButton onClick={handleOpenCreateModal}>
             <Plus size={20} />
             Create Playlist
           </CreatePlaylistButton>
-          <CreateSmartPlaylistButton onClick={() => navigate('/smart-playlist/new')}>
-            <Sparkles size={18} />
-            Create Smart Playlist
-          </CreateSmartPlaylistButton>
-          <CreateSmartPlaylistButton onClick={() => importPlaylistInput.current?.click()}>
-            <Upload size={18} />
-            Import M3U
-          </CreateSmartPlaylistButton>
           <input
             ref={importPlaylistInput}
             type="file"
@@ -674,6 +756,30 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </FormGroup>
 
             <FormGroup>
+              <Label>Playlist type</Label>
+              <PlaylistTypeGrid>
+                <PlaylistTypeButton
+                  type="button"
+                  $selected={playlistType === 'manual'}
+                  onClick={() => setPlaylistType('manual')}
+                  disabled={isCreating}
+                >
+                  <strong><ListMusic size={17} /> Standard playlist</strong>
+                  <span>Add and reorder tracks yourself.</span>
+                </PlaylistTypeButton>
+                <PlaylistTypeButton
+                  type="button"
+                  $selected={playlistType === 'smart'}
+                  onClick={() => setPlaylistType('smart')}
+                  disabled={isCreating}
+                >
+                  <strong><Sparkles size={17} /> Smart playlist</strong>
+                  <span>Build rules that update the playlist automatically.</span>
+                </PlaylistTypeButton>
+              </PlaylistTypeGrid>
+            </FormGroup>
+
+            <FormGroup>
               <Label htmlFor="playlist-description">Description (optional)</Label>
               <Textarea
                 id="playlist-description"
@@ -685,9 +791,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </FormGroup>
 
             {createError && (
-              <div style={{ color: '#f44336', fontSize: '14px', marginBottom: '16px' }}>
-                {createError}
-              </div>
+              <ErrorText>{createError}</ErrorText>
             )}
 
             <ModalActions>
@@ -705,7 +809,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 disabled={isCreating || !playlistName.trim()}
                 $variant="primary"
               >
-                {isCreating ? 'Creating...' : 'Create'}
+                {isCreating ? 'Creating...' : playlistType === 'smart' ? 'Continue' : 'Create'}
               </Button>
             </ModalActions>
           </ModalContent>

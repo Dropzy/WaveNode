@@ -1,138 +1,68 @@
-# Music Player Frontend
+# WaveNode Frontend
 
-A Spotify-like music player web application built with React, TypeScript, and Vite. This frontend connects to the Go backend API to provide a complete music streaming experience.
+React, TypeScript, Vite, and Electron client surfaces for WaveNode.
 
-## Features
+## Targets
 
-- **Spotify-like UI**: Dark theme with green accents, matching Spotify's design language
-- **Music Library**: Browse and search through your music collection
-- **Playlist Management**: Create, view, and manage playlists
-- **Search Functionality**: Search for tracks by title, artist, album, or genre
-- **Responsive Design**: Works on desktop and mobile devices
-- **Modern Stack**: Built with React 18, TypeScript, and Styled Components
+- Web app served by Docker/nginx or Vite during development
+- Standalone Electron desktop app that connects to any WaveNode server
 
-## Tech Stack
-
-- **React 18** - UI framework
-- **TypeScript** - Type safety
-- **Vite** - Build tool and dev server
-- **React Router** - Client-side routing
-- **Styled Components** - CSS-in-JS styling
-- **Axios** - HTTP client for API calls
-- **Lucide React** - Icon library
-
-## Prerequisites
-
-- Node.js 16+ and npm
-- The Go backend server running on `http://localhost:8080`
-
-## Installation
-
-1. Navigate to the Frontend directory:
-```bash
-cd Frontend
-```
-
-2. Install dependencies:
-```bash
-npm install
-```
+The Electron client uses the same React player as the web app, but it adds a desktop-only login flow for entering a WaveNode server URL and discovering local servers on the LAN.
 
 ## Development
 
-Start the development server:
+Install dependencies:
+
+```bash
+npm ci
+```
+
+Run the browser app:
+
 ```bash
 npm run dev
 ```
 
-The application will be available at `http://localhost:5173` (or the next available port).
+Run the Electron desktop client against the local Vite dev server:
 
-## Building for Production
+```bash
+npm run desktop:dev
+```
 
-Create a production build:
+Build the production web bundle:
+
 ```bash
 npm run build
 ```
 
-Preview the production build:
+Build the Electron desktop app:
+
 ```bash
-npm run preview
+npm run desktop:build
 ```
 
-## Project Structure
+Electron build output is written to `release/`.
 
-```
-Frontend/
-├── src/
-│   ├── components/          # Reusable UI components
-│   │   ├── Layout.tsx      # Main layout wrapper
-│   │   ├── Sidebar.tsx     # Navigation sidebar
-│   │   └── Player.tsx      # Music player controls
-│   ├── pages/              # Page components
-│   │   ├── Home.tsx        # Home page with featured content
-│   │   ├── Library.tsx     # Music library view
-│   │   ├── Search.tsx      # Search results page
-│   │   └── Playlist.tsx    # Individual playlist view
-│   ├── services/           # API services
-│   │   └── api.ts          # API client and types
-│   ├── styles/             # Global styles
-│   │   └── GlobalStyle.ts  # Global styled-components
-│   ├── App.tsx             # Main app component with routing
-│   └── main.tsx            # App entry point
-├── public/                 # Static assets
-├── index.html              # HTML template
-├── package.json            # Dependencies and scripts
-└── vite.config.ts          # Vite configuration
+## Server Selection
+
+Browser builds use the server they are hosted from, or `VITE_API_BASE_URL` when configured.
+
+Electron builds are standalone clients. On the login screen users can:
+
+- enter a server URL such as `http://192.168.1.70:8080`
+- click **Find servers on this network** to discover local WaveNode servers
+
+The selected server is stored locally in the desktop app and used for API, artwork, and streaming URLs.
+
+## Useful Scripts
+
+```bash
+npm run build          # Type-check and build the web app
+npm run desktop:dev    # Start Vite and Electron together
+npm run desktop:build  # Build the desktop package
+npm run lint           # Run ESLint
 ```
 
-## API Integration
+## Notes
 
-The frontend connects to the Go backend API at `http://localhost:8080`. The API endpoints include:
-
-- `GET /api/music` - Get all music tracks
-- `GET /api/music/search?q={query}` - Search music
-- `GET /api/playlists` - Get all playlists
-- `GET /api/playlists/{id}` - Get specific playlist
-- `POST /api/playlists` - Create new playlist
-- And more...
-
-## Usage
-
-1. **Home Page**: View featured playlists and recently played tracks
-2. **Library**: Browse your complete music collection organized by albums and artists
-3. **Search**: Find specific tracks, albums, or artists
-4. **Playlists**: View and manage your playlists
-5. **Player**: Control music playback with the bottom player bar
-
-## Styling
-
-The application uses Styled Components for styling with a Spotify-inspired design:
-
-- **Dark Theme**: Black background (#000) with gray accents
-- **Primary Color**: Spotify green (#1db954)
-- **Typography**: System fonts for optimal performance
-- **Responsive**: Adapts to different screen sizes
-
-## Development Notes
-
-- The app uses React 18 with concurrent features
-- TypeScript provides type safety throughout the application
-- Styled Components allow for dynamic, component-based styling
-- The API service layer handles all backend communication
-- React Router manages client-side navigation
-
-## Troubleshooting
-
-1. **API Connection Issues**: Ensure the backend server is running on port 8080
-2. **Build Errors**: Check that all dependencies are installed with `npm install`
-3. **Port Conflicts**: Vite will automatically use the next available port if 5173 is in use
-
-## Future Enhancements
-
-- [ ] Audio playback functionality
-- [ ] User authentication
-- [ ] Real-time updates
-- [ ] Offline support
-- [ ] Advanced audio controls (equalizer, crossfade)
-- [ ] Social features (sharing, following)
-- [ ] Podcast support
+The Docker frontend image only contains the web bundle served by nginx. Electron is distributed separately as a desktop client package.

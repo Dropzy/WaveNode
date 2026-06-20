@@ -143,11 +143,46 @@ func (db *DB) EnrichTrackAudioProperties(tracks []Music) error {
 }
 
 func (db *DB) AddListeningHistory(userID, trackID, source, device string) error {
-	_, err := db.conn.Exec(`
-		INSERT INTO listening_history (id, user_id, track_id, played_at, source, device)
-		VALUES ($1, $2, $3, CURRENT_TIMESTAMP, $4, $5)
-	`, fmt.Sprintf("history_%d", time.Now().UnixNano()), userID, trackID, source, device)
-	return err
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2))`, userID, trackID); err != nil {
+		return err
+	}
+
+	result, err := tx.Exec(`
+		UPDATE listening_history
+		SET played_at = CURRENT_TIMESTAMP,
+		    source = $3,
+		    device = $4
+		WHERE id = (
+			SELECT id
+			FROM listening_history
+			WHERE user_id = $1
+			  AND track_id = $2
+			  AND played_at >= CURRENT_TIMESTAMP - INTERVAL '2 minutes'
+			ORDER BY played_at DESC
+			LIMIT 1
+		)
+	`, userID, trackID, source, device)
+	if err != nil {
+		return err
+	}
+	if rows, err := result.RowsAffected(); err != nil {
+		return err
+	} else if rows == 0 {
+		if _, err := tx.Exec(`
+			INSERT INTO listening_history (id, user_id, track_id, played_at, source, device)
+			VALUES ($1, $2, $3, CURRENT_TIMESTAMP, $4, $5)
+		`, fmt.Sprintf("history_%d", time.Now().UnixNano()), userID, trackID, source, device); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
 
 func (db *DB) GetListeningHistory(userID, search string, limit, offset int) ([]ListeningHistoryEntry, error) {
@@ -166,6 +201,14 @@ func (db *DB) GetListeningHistory(userID, search string, limit, offset int) ([]L
 		WHERE h.user_id = $1 AND (
 			$2 = '%%' OR LOWER(m.title) LIKE $2 OR LOWER(m.artist) LIKE $2
 			OR LOWER(COALESCE(m.album, '')) LIKE $2
+		)
+		AND NOT EXISTS (
+			SELECT 1
+			FROM listening_history newer
+			WHERE newer.user_id = h.user_id
+			  AND newer.track_id = h.track_id
+			  AND newer.played_at > h.played_at
+			  AND newer.played_at <= h.played_at + INTERVAL '2 minutes'
 		)
 		ORDER BY h.played_at DESC LIMIT $3 OFFSET $4
 	`, userID, search, limit, offset)
@@ -218,11 +261,26 @@ func (db *DB) IsSessionActive(id, userID string) bool {
 	return true
 }
 
+func (db *DB) UpdateSessionClientInfo(id, userID, deviceName, userAgent, ipAddress string) {
+	if id == "" || userID == "" {
+		return
+	}
+	_, _ = db.conn.Exec(`
+		UPDATE user_sessions
+		SET device_name = COALESCE(NULLIF($3, ''), device_name),
+		    user_agent = COALESCE(NULLIF($4, ''), user_agent),
+		    ip_address = COALESCE(NULLIF($5, ''), ip_address),
+		    last_seen_at = CURRENT_TIMESTAMP
+		WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
+	`, id, userID, deviceName, userAgent, ipAddress)
+}
+
 func (db *DB) GetUserSessions(userID string) ([]UserSession, error) {
 	rows, err := db.conn.Query(`
 		SELECT id, user_id, device_name, user_agent, ip_address, last_seen_at,
 		       created_at, expires_at, revoked_at
-		FROM user_sessions WHERE user_id = $1 AND expires_at > CURRENT_TIMESTAMP
+		FROM user_sessions
+		WHERE user_id = $1 AND expires_at > CURRENT_TIMESTAMP AND revoked_at IS NULL
 		ORDER BY last_seen_at DESC
 	`, userID)
 	if err != nil {

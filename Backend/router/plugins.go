@@ -1,12 +1,16 @@
 package router
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"music-server/database"
 
@@ -17,6 +21,7 @@ const (
 	maxPluginManifestBytes = 256 * 1024
 	maxPluginHomeRows      = 10
 	maxPluginRowItems      = 100
+	maxPluginTrackActions  = 20
 )
 
 var pluginIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,98}[a-z0-9]$`)
@@ -33,7 +38,16 @@ type PluginManifest struct {
 }
 
 type PluginContributions struct {
-	HomeRows []PluginHomeRow `json:"home_rows,omitempty"`
+	HomeRows     []PluginHomeRow     `json:"home_rows,omitempty"`
+	TrackActions []PluginTrackAction `json:"track_actions,omitempty"`
+}
+
+type PluginTrackAction struct {
+	ID         string `json:"id"`
+	Label      string `json:"label"`
+	Icon       string `json:"icon,omitempty"`
+	ActionType string `json:"action_type"`
+	URL        string `json:"url"`
 }
 
 type PluginHomeRow struct {
@@ -61,6 +75,15 @@ type runtimeHomeRow struct {
 	Subtitle string          `json:"subtitle,omitempty"`
 	Type     string          `json:"type"`
 	Items    []PluginRowItem `json:"items"`
+}
+
+type runtimeTrackAction struct {
+	PluginID   string `json:"plugin_id"`
+	ID         string `json:"id"`
+	Label      string `json:"label"`
+	Icon       string `json:"icon,omitempty"`
+	ActionType string `json:"action_type"`
+	URL        string `json:"url"`
 }
 
 func validatePluginManifest(raw []byte) (*PluginManifest, error) {
@@ -100,7 +123,7 @@ func validatePluginManifest(raw []byte) (*PluginManifest, error) {
 			return nil, fmt.Errorf("invalid plugin homepage: %v", err)
 		}
 	}
-	allowedPermissions := map[string]bool{"network": true, "playback": true}
+	allowedPermissions := map[string]bool{"network": true, "playback": true, "download": true}
 	permissions := make(map[string]bool)
 	for _, permission := range manifest.Permissions {
 		permission = strings.ToLower(strings.TrimSpace(permission))
@@ -111,6 +134,9 @@ func validatePluginManifest(raw []byte) (*PluginManifest, error) {
 	}
 	if len(manifest.Contributes.HomeRows) > maxPluginHomeRows {
 		return nil, fmt.Errorf("plugins may contribute at most %d home rows", maxPluginHomeRows)
+	}
+	if len(manifest.Contributes.TrackActions) > maxPluginTrackActions {
+		return nil, fmt.Errorf("plugins may contribute at most %d track actions", maxPluginTrackActions)
 	}
 
 	rowIDs := make(map[string]struct{})
@@ -168,7 +194,35 @@ func validatePluginManifest(raw []byte) (*PluginManifest, error) {
 			}
 		}
 	}
-	if len(manifest.Contributes.HomeRows) == 0 {
+	actionIDs := make(map[string]struct{})
+	for actionIndex := range manifest.Contributes.TrackActions {
+		action := &manifest.Contributes.TrackActions[actionIndex]
+		action.ID = strings.TrimSpace(action.ID)
+		action.Label = strings.TrimSpace(action.Label)
+		action.Icon = strings.ToLower(strings.TrimSpace(action.Icon))
+		action.ActionType = strings.ToLower(strings.TrimSpace(action.ActionType))
+		action.URL = strings.TrimSpace(action.URL)
+		if !pluginIDPattern.MatchString(action.ID) {
+			return nil, fmt.Errorf("track action %d has an invalid ID", actionIndex+1)
+		}
+		if _, exists := actionIDs[action.ID]; exists {
+			return nil, fmt.Errorf("track action ID %q is duplicated", action.ID)
+		}
+		actionIDs[action.ID] = struct{}{}
+		if action.Label == "" || len(action.Label) > 80 {
+			return nil, fmt.Errorf("track action %q must have a label of 1-80 characters", action.ID)
+		}
+		if action.ActionType != "download" {
+			return nil, fmt.Errorf("track action %q uses unsupported action type %q", action.ID, action.ActionType)
+		}
+		if !permissions["download"] {
+			return nil, fmt.Errorf("download track actions require download permission")
+		}
+		if action.URL != "/api/music/{id}/download" {
+			return nil, fmt.Errorf("track action %q must use the approved download URL template", action.ID)
+		}
+	}
+	if len(manifest.Contributes.HomeRows) == 0 && len(manifest.Contributes.TrackActions) == 0 {
 		return nil, fmt.Errorf("plugin does not contribute any supported features")
 	}
 	return &manifest, nil
@@ -260,6 +314,136 @@ func (r *Router) getPluginHomeRows(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "data": rows})
 }
 
+func (r *Router) getPluginRadioMetadata(w http.ResponseWriter, req *http.Request) {
+	streamURL := strings.TrimSpace(req.URL.Query().Get("stream_url"))
+	if streamURL == "" {
+		writeJSONError(w, http.StatusBadRequest, "stream_url is required")
+		return
+	}
+
+	item, ok, err := r.findPluginRadioItem(streamURL)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeJSONError(w, http.StatusForbidden, "stream_url is not provided by an enabled radio plugin")
+		return
+	}
+
+	title, metadataErr := fetchICYStreamTitle(streamURL)
+	if metadataErr != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"data": map[string]interface{}{
+				"station_title": item.Title,
+				"stream_title":  "",
+				"error":         metadataErr.Error(),
+			},
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"data": map[string]interface{}{
+			"station_title": item.Title,
+			"stream_title":  title,
+		},
+	})
+}
+
+func (r *Router) getPluginTrackActions(w http.ResponseWriter, _ *http.Request) {
+	actions, err := r.pluginTrackActions()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "data": actions})
+}
+
+func (r *Router) findPluginRadioItem(streamURL string) (PluginRowItem, bool, error) {
+	rows, err := r.pluginHomeRows()
+	if err != nil {
+		return PluginRowItem{}, false, err
+	}
+	for _, row := range rows {
+		if row.Type != "radio" {
+			continue
+		}
+		for _, item := range row.Items {
+			if item.StreamURL == streamURL {
+				return item, true, nil
+			}
+		}
+	}
+	return PluginRowItem{}, false, nil
+}
+
+func fetchICYStreamTitle(streamURL string) (string, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	request, err := http.NewRequest(http.MethodGet, streamURL, nil)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Icy-MetaData", "1")
+	request.Header.Set("User-Agent", "WaveNode/0.1 radio metadata")
+
+	response, err := client.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return "", fmt.Errorf("station returned %s", response.Status)
+	}
+
+	metaInterval, err := strconv.Atoi(response.Header.Get("icy-metaint"))
+	if err != nil || metaInterval <= 0 {
+		return "", fmt.Errorf("station does not expose ICY metadata")
+	}
+
+	reader := bufio.NewReader(response.Body)
+	for attempts := 0; attempts < 8; attempts++ {
+		if _, err := io.CopyN(io.Discard, reader, int64(metaInterval)); err != nil {
+			return "", err
+		}
+
+		lengthByte, err := reader.ReadByte()
+		if err != nil {
+			return "", err
+		}
+		metadataLength := int(lengthByte) * 16
+		if metadataLength == 0 {
+			continue
+		}
+
+		block := make([]byte, metadataLength)
+		if _, err := io.ReadFull(reader, block); err != nil {
+			return "", err
+		}
+		if title := parseICYStreamTitle(string(block)); title != "" {
+			return title, nil
+		}
+	}
+
+	return "", fmt.Errorf("no current stream title found")
+}
+
+func parseICYStreamTitle(metadata string) string {
+	const marker = "StreamTitle='"
+	start := strings.Index(metadata, marker)
+	if start < 0 {
+		return ""
+	}
+	start += len(marker)
+	end := strings.Index(metadata[start:], "';")
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(metadata[start : start+end])
+}
+
 func (r *Router) pluginHomeRows() ([]runtimeHomeRow, error) {
 	plugins, err := r.db.GetPlugins(true)
 	if err != nil {
@@ -279,6 +463,27 @@ func (r *Router) pluginHomeRows() ([]runtimeHomeRow, error) {
 		}
 	}
 	return rows, nil
+}
+
+func (r *Router) pluginTrackActions() ([]runtimeTrackAction, error) {
+	plugins, err := r.db.GetPlugins(true)
+	if err != nil {
+		return nil, err
+	}
+	actions := make([]runtimeTrackAction, 0)
+	for _, plugin := range plugins {
+		manifest, err := validatePluginManifest(plugin.Manifest)
+		if err != nil {
+			continue
+		}
+		for _, action := range manifest.Contributes.TrackActions {
+			actions = append(actions, runtimeTrackAction{
+				PluginID: plugin.ID, ID: action.ID, Label: action.Label,
+				Icon: action.Icon, ActionType: action.ActionType, URL: action.URL,
+			})
+		}
+	}
+	return actions, nil
 }
 
 func (r *Router) subsonicInternetRadioStations() (map[string]interface{}, *subsonicError) {

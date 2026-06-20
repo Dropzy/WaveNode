@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { AudioProvider } from './contexts/AudioContext';
@@ -18,27 +18,65 @@ import Setup from './pages/Setup';
 import Account from './pages/Account';
 import SmartPlaylistEditor from './pages/SmartPlaylistEditor';
 import History from './pages/History';
+import LastFMCallback from './pages/LastFMCallback';
 import { GlobalStyle } from './styles/GlobalStyle';
+import { AppThemeProvider } from './contexts/ThemeContext';
 import { setupAPI, SetupStatus } from './services/api';
 import { Loader2 } from 'lucide-react';
 import styled from 'styled-components';
 
-function SetupAwareApp() {
-  const [status, setStatus] = useState<SetupStatus | null>(null)
-  const [error, setError] = useState('')
+const setupStatusStorageKey = 'wavenode.setup.status'
 
-  const loadStatus = async () => {
+const readCachedSetupStatus = (): SetupStatus | null => {
+  try {
+    const rawStatus = window.localStorage.getItem(setupStatusStorageKey)
+    if (!rawStatus) return null
+    const status = JSON.parse(rawStatus) as Partial<SetupStatus>
+    if (typeof status.required !== 'boolean') return null
+    return {
+      required: status.required,
+      token_required: Boolean(status.token_required),
+      default_artwork_path: status.default_artwork_path || '',
+      registration_enabled: Boolean(status.registration_enabled),
+    }
+  } catch {
+    return null
+  }
+}
+
+const writeCachedSetupStatus = (status: SetupStatus) => {
+  try {
+    window.localStorage.setItem(setupStatusStorageKey, JSON.stringify(status))
+  } catch {
+    // Non-critical: startup still works without local storage.
+  }
+}
+
+function SetupAwareApp() {
+  const [status, setStatus] = useState<SetupStatus | null>(() => readCachedSetupStatus())
+  const [error, setError] = useState('')
+  const statusRef = useRef(status)
+
+  useEffect(() => {
+    statusRef.current = status
+  }, [status])
+
+  const loadStatus = useCallback(async () => {
     setError('')
     try {
-      setStatus(await setupAPI.getStatus())
+      const nextStatus = await setupAPI.getStatus()
+      setStatus(nextStatus)
+      writeCachedSetupStatus(nextStatus)
     } catch {
-      setError('WaveNode could not check whether setup is complete.')
+      if (!statusRef.current) {
+        setError('WaveNode could not check whether setup is complete.')
+      }
     }
-  }
+  }, [])
 
   useEffect(() => {
     void loadStatus()
-  }, [])
+  }, [loadStatus])
 
   if (error) {
     return (
@@ -83,6 +121,7 @@ function SetupAwareApp() {
         <Route path="/smart-playlist/:id/edit" element={<ProtectedRoute><Layout><SmartPlaylistEditor /></Layout></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute><Layout><AdminDashboard /></Layout></ProtectedRoute>} />
         <Route path="/account" element={<ProtectedRoute><Layout><Account /></Layout></ProtectedRoute>} />
+        <Route path="/lastfm/callback" element={<ProtectedRoute><Layout><LastFMCallback /></Layout></ProtectedRoute>} />
         <Route path="/history" element={<ProtectedRoute><Layout><History /></Layout></ProtectedRoute>} />
       </Routes>
     </AudioProvider>
@@ -91,12 +130,12 @@ function SetupAwareApp() {
 
 function App() {
   return (
-    <>
+    <AppThemeProvider>
       <GlobalStyle />
       <AuthProvider>
         <SetupAwareApp />
       </AuthProvider>
-    </>
+    </AppThemeProvider>
   );
 }
 
@@ -106,15 +145,15 @@ const GateState = styled.main`
   place-content: center;
   justify-items: center;
   gap: 14px;
-  background: #0b100d;
-  color: #fff;
+  background: ${({ theme }) => theme.colors.background};
+  color: ${({ theme }) => theme.colors.text};
 
-  p { color: #aeb6b0; }
+  p { color: ${({ theme }) => theme.colors.muted}; }
   button {
     padding: 11px 18px;
     border-radius: 999px;
-    background: #1ed760;
-    color: #07130b;
+    background: ${({ theme }) => theme.colors.accentGradient};
+    color: ${({ theme }) => theme.colors.accentText};
     font-weight: 800;
   }
 `

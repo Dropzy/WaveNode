@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Play, Music, User, Shuffle } from 'lucide-react'
-import { artistAPI, ArtistTracksResponse, Music as Track } from '../services/api'
+import { artistAPI, ArtistImage, ArtistTracksResponse, Music as Track } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useAudio } from '../contexts/AudioContext'
 import { getAlbumArtworkUrl, getArtworkGradient, getTrackArtworkUrl } from '../utils/mediaUrl'
@@ -142,11 +142,29 @@ const ArtistActions = styled.div`
   }
 `
 
+const Attribution = styled.div`
+  max-width: 760px;
+  margin: -8px 0 20px;
+  color: #b3b3b3;
+  font-size: 12px;
+  line-height: 1.45;
+
+  a {
+    color: #d8d8d8;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  @media (max-width: 768px) {
+    margin: -4px auto 18px;
+  }
+`
+
 const PlayButton = styled.button`
-  background-color: #1db954;
+  background-color: ${({ theme }) => theme.colors.accent};
   border: none;
   border-radius: 500px;
-  color: #fff;
+  color: ${({ theme }) => theme.colors.accentText};
   padding: 12px 32px;
   font-size: 14px;
   font-weight: 700;
@@ -157,7 +175,7 @@ const PlayButton = styled.button`
   transition: all 0.2s ease;
 
   &:hover {
-    background-color: #1ed760;
+    background-color: ${({ theme }) => theme.colors.accentHover};
     transform: scale(1.05);
   }
   
@@ -182,8 +200,8 @@ const ShuffleButton = styled.button`
   transition: all 0.2s ease;
 
   &:hover {
-    border-color: #1db954;
-    color: #1db954;
+    border-color: ${({ theme }) => theme.colors.accent};
+    color: ${({ theme }) => theme.colors.accent};
     transform: scale(1.05);
   }
   
@@ -274,13 +292,13 @@ const TrackPlayIcon = styled.div<{ $visible?: boolean }>`
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: #1db954;
+  color: ${({ theme }) => theme.colors.accent};
   opacity: ${props => props.$visible ? 1 : 0};
   transition: opacity 0.2s ease;
   cursor: pointer;
   
   &:hover {
-    color: #1ed760;
+    color: ${({ theme }) => theme.colors.accentHover};
   }
 `
 
@@ -426,9 +444,10 @@ const formatDate = (dateString: string): string => {
 export const Artist: React.FC = () => {
   const { artistId } = useParams<{ artistId: string }>()
   const { token } = useAuth()
-  const { playTrack, playPlaylist, playPlaylistShuffled } = useAudio()
+  const { playFromQueue, playPlaylist, playPlaylistShuffled } = useAudio()
   const navigate = useNavigate()
   const [artistData, setArtistData] = useState<ArtistTracksResponse | null>(null)
+  const [artistImage, setArtistImage] = useState<ArtistImage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [hoveredTrackIndex, setHoveredTrackIndex] = useState<number | null>(null)
@@ -450,6 +469,8 @@ export const Artist: React.FC = () => {
         console.log('Artist data response:', data)
         if (data && data.artist && data.tracks) {
           setArtistData(data)
+          const image = await artistAPI.getImage(data.artist.id)
+          setArtistImage(image)
           setError(null)
         } else {
           console.error('Invalid artist data structure:', data)
@@ -480,8 +501,12 @@ export const Artist: React.FC = () => {
   }
 
   const handlePlayTrack = useCallback((track: Track) => {
-    playTrack(track)
-  }, [playTrack])
+    if (!artistData?.tracks?.length) {
+      return
+    }
+    const index = artistData.tracks.findIndex(item => item.id === track.id)
+    playFromQueue(artistData.tracks, index === -1 ? 0 : index)
+  }, [artistData?.tracks, playFromQueue])
 
   const handlePlayAll = useCallback(() => {
     if (artistData?.tracks && artistData.tracks.length > 0) {
@@ -515,9 +540,10 @@ export const Artist: React.FC = () => {
     )
   }
 
-  const artistArtworkUrl = artistData.tracks
+  const artistArtworkUrl = artistImage?.image_url || artistImage?.thumbnail_url || artistData.tracks
     .map(getTrackArtworkUrl)
     .find(Boolean)
+  const hasAlbums = artistData.albums.length > 0
 
   return (
     <ArtistContainer>
@@ -540,10 +566,12 @@ export const Artist: React.FC = () => {
               <StatValue>{artistData.artist.track_count}</StatValue>
               <div>Tracks</div>
             </Stat>
-            <Stat>
-              <StatValue>{artistData.artist.album_count}</StatValue>
-              <div>Albums</div>
-            </Stat>
+            {hasAlbums && (
+              <Stat>
+                <StatValue>{artistData.artist.album_count}</StatValue>
+                <div>Albums</div>
+              </Stat>
+            )}
           </ArtistStats>
           <ArtistActions>
             <PlayButton onClick={handlePlayAll}>
@@ -555,11 +583,50 @@ export const Artist: React.FC = () => {
               Shuffle
             </ShuffleButton>
           </ArtistActions>
+          {artistImage?.attribution_text && (
+            <Attribution>
+              {artistImage.source_page_url ? (
+                <a href={artistImage.source_page_url} target="_blank" rel="noreferrer">
+                  {artistImage.attribution_text}
+                </a>
+              ) : artistImage.attribution_text}
+              {artistImage.license_name && <> · {artistImage.license_url ? (
+                <a href={artistImage.license_url} target="_blank" rel="noreferrer">{artistImage.license_name}</a>
+              ) : artistImage.license_name}</>}
+            </Attribution>
+          )}
         </ArtistInfo>
       </Header>
 
+      {hasAlbums && (
+        <Section>
+          <SectionTitle>Albums</SectionTitle>
+          <AlbumGrid>
+            {artistData.albums.map((album) => (
+              <AlbumCard
+                key={album.id}
+                onClick={() => handleAlbumClick(album.name)}
+              >
+                <AlbumArt
+                  $imageUrl={getAlbumArtworkUrl(album, artistData.tracks)}
+                  $fallback={getArtworkGradient(`${album.name}|${album.artist}`)}
+                >
+                  {!getAlbumArtworkUrl(album, artistData.tracks) && <Music size={48} />}
+                </AlbumArt>
+                <AlbumName>{album.name}</AlbumName>
+                <AlbumYear>
+                  {album.year || artistData.tracks
+                    .filter(track => track.album === album.name)
+                    .map(track => formatDate(track.release_date))[0] || ''}
+                </AlbumYear>
+              </AlbumCard>
+            ))}
+          </AlbumGrid>
+        </Section>
+      )}
+
       <Section>
-        <SectionTitle>Popular Tracks</SectionTitle>
+        <SectionTitle>All Tracks</SectionTitle>
         <TrackList>
           {artistData.tracks.map((track, index) => (
             <TrackItem 
@@ -618,31 +685,6 @@ export const Artist: React.FC = () => {
         position={selectionMenu}
         onClose={() => setSelectionMenu(null)}
       />
-
-      <Section>
-        <SectionTitle>Albums</SectionTitle>
-        <AlbumGrid>
-          {artistData.albums.map((album) => (
-            <AlbumCard 
-              key={album.id}
-              onClick={() => handleAlbumClick(album.name)}
-            >
-              <AlbumArt
-                $imageUrl={getAlbumArtworkUrl(album, artistData.tracks)}
-                $fallback={getArtworkGradient(`${album.name}|${album.artist}`)}
-              >
-                {!getAlbumArtworkUrl(album, artistData.tracks) && <Music size={48} />}
-              </AlbumArt>
-              <AlbumName>{album.name}</AlbumName>
-              <AlbumYear>
-                {album.year || artistData.tracks
-                  .filter(track => track.album === album.name)
-                  .map(track => formatDate(track.release_date))[0] || ''}
-              </AlbumYear>
-            </AlbumCard>
-          ))}
-        </AlbumGrid>
-      </Section>
     </ArtistContainer>
   )
 }

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"music-server/artistmeta"
 	"music-server/database"
 	"music-server/metadata"
 	"music-server/utils"
@@ -71,6 +72,21 @@ func (r *Router) uploadArtistImage(w http.ResponseWriter, req *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if err := r.db.UpsertArtistImage(&database.ArtistImage{
+		ArtistID:        artist.ID,
+		Source:          artistmeta.UploadedImageProvider{}.Name(),
+		ImageURL:        imageURL,
+		ThumbnailURL:    imageURL,
+		SourcePageURL:   imageURL,
+		LicenseName:     "User uploaded",
+		AuthorName:      strings.TrimSpace(req.FormValue("author_name")),
+		AttributionText: strings.TrimSpace(req.FormValue("attribution_text")),
+		ConfidenceScore: 1,
+		IsPrimary:       true,
+	}); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	artist.ImageURL = imageURL
 	artist.ImageSmallURL = imageURL
@@ -85,7 +101,12 @@ func (r *Router) deleteArtistImage(w http.ResponseWriter, req *http.Request) {
 		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	previousImageURL := artist.ImageURL
 	if err := r.db.UpdateArtistImage(artist.ID, ""); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := r.db.DeleteArtistImageRecord(artist.ID, previousImageURL); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

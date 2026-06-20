@@ -65,7 +65,7 @@ export class AudioService {
     });
   }
 
-  setTrack(track: Music, autoplay = false): Promise<void> {
+  setTrack(track: Music, autoplay = false, startTime = 0): Promise<void> {
     return new Promise((resolve, reject) => {
       const loadSequence = ++this.loadSequence;
       this.isSettingTrack = true;
@@ -87,6 +87,9 @@ export class AudioService {
         }
         this.audio.removeEventListener('canplay', onCanPlay);
         this.audio.removeEventListener('error', onError);
+        if (startTime > 0 && this.audio.duration && !isNaN(this.audio.duration)) {
+          this.audio.currentTime = Math.max(0, Math.min(startTime, this.audio.duration));
+        }
         this.isSettingTrack = false;
         resolve();
       };
@@ -110,12 +113,19 @@ export class AudioService {
       this.audio.load();
 
       if (autoplay) {
-        void this.audio.play().catch(error => {
-          this.audio.removeEventListener('canplay', onCanPlay);
-          this.audio.removeEventListener('error', onError);
-          this.isSettingTrack = false;
-          reject(error);
-        });
+        const playWhenReady = () => {
+          if (loadSequence !== this.loadSequence) {
+            return;
+          }
+          this.audio.removeEventListener('canplay', playWhenReady);
+          void this.audio.play().catch(error => {
+            this.audio.removeEventListener('canplay', onCanPlay);
+            this.audio.removeEventListener('error', onError);
+            this.isSettingTrack = false;
+            reject(error);
+          });
+        };
+        this.audio.addEventListener('canplay', playWhenReady, { once: true });
       }
     });
   }

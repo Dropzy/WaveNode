@@ -1,12 +1,13 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { musicAPI, SearchResult, Music, Playlist } from '../services/api';
+import { musicAPI, SearchResult, Music, Playlist, Album } from '../services/api';
 import { useAudio } from '../contexts/AudioContext';
 import { formatDuration } from '../utils/formatDuration';
 import { Search as SearchIcon, Music as MusicIcon, Disc, User, ListMusic } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { TrackActionsMenu, TrackSelectionContextMenu } from '../components/TrackActionsMenu';
 import { useTrackSelection } from '../hooks/useTrackSelection';
+import { getAlbumArtworkUrl, getArtworkGradient, getTrackArtworkUrl, resolveMediaUrl } from '../utils/mediaUrl';
 
 interface SearchProps {
   onTrackSelect?: (track: Music) => void;
@@ -95,7 +96,7 @@ const LoadingIndicator = styled.div`
   right: 20px;
   top: 50%;
   transform: translateY(-50%);
-  color: #1db954;
+  color: ${props => props.theme.colors.accent};
   font-size: 14px;
   font-weight: 500;
   
@@ -140,7 +141,7 @@ const TabButton = styled.button<{ $active: boolean }>`
   cursor: pointer;
   font-size: 14px;
   font-weight: 600;
-  border-bottom: 2px solid ${props => props.$active ? '#1db954' : 'transparent'};
+  border-bottom: 2px solid ${props => props.$active ? props.theme.colors.accent : 'transparent'};
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
@@ -215,10 +216,10 @@ const TrackItem = styled.div<{ $selected?: boolean }>`
   }
 `;
 
-const TrackCover = styled.div`
+const TrackCover = styled.div<{ $imageUrl?: string; $fallback?: string }>`
   width: 40px;
   height: 40px;
-  background: linear-gradient(135deg, #4a90e2, #7bb3f0);
+  background: ${props => props.$imageUrl ? `url("${props.$imageUrl}") center/cover` : props.$fallback || 'linear-gradient(135deg, #4a90e2, #7bb3f0)'};
   border-radius: 4px;
   display: flex;
   align-items: center;
@@ -317,19 +318,15 @@ const Card = styled.div`
     transform: translateY(-2px);
   }
 
-  &:hover ${TrackCover} {
-    background-color: #1db954;
-  }
-  
   @media (max-width: 768px) {
     padding: 12px;
   }
 `;
 
-const CardCover = styled.div<{ $gradient?: string }>`
+const CardCover = styled.div<{ $imageUrl?: string; $gradient?: string }>`
   width: 100%;
   aspect-ratio: 1;
-  background: ${props => props.$gradient || 'linear-gradient(135deg, #4a90e2, #7bb3f0)'};
+  background: ${props => props.$imageUrl ? `url("${props.$imageUrl}") center/cover` : props.$gradient || 'linear-gradient(135deg, #4a90e2, #7bb3f0)'};
   border-radius: 8px;
   margin-bottom: 16px;
   display: flex;
@@ -430,7 +427,7 @@ const Search: React.FC<SearchProps> = ({ onTrackSelect }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'songs' | 'albums' | 'artists' | 'playlists'>('all');
-  const { playTrack } = useAudio();
+  const { playFromQueue } = useAudio();
   const navigate = useNavigate();
   const visibleSongs = searchResults?.songs || [];
   const trackSelection = useTrackSelection(visibleSongs);
@@ -465,11 +462,12 @@ const Search: React.FC<SearchProps> = ({ onTrackSelect }) => {
     return () => clearTimeout(delayedSearch);
   }, [handleSearch, query]);
 
-  const handleTrackPlay = (track: Music) => {
+  const handleTrackPlay = (track: Music, songs: Music[] = visibleSongs) => {
     if (onTrackSelect) {
       onTrackSelect(track);
     } else {
-      playTrack(track);
+      const index = songs.findIndex(item => item.id === track.id);
+      playFromQueue(songs, index === -1 ? 0 : index);
     }
   };
 
@@ -483,8 +481,8 @@ const Search: React.FC<SearchProps> = ({ onTrackSelect }) => {
     setActiveTab('songs');
   };
 
-  const handleAlbumClick = (albumName: string) => {
-    navigate(`/album/${encodeURIComponent(albumName)}`);
+  const handleAlbumClick = (album: Album) => {
+    navigate(`/album/${encodeURIComponent(album.id || album.name)}`);
   };
 
   const handlePlaylistClick = (playlistId: string) => {
@@ -495,7 +493,9 @@ const Search: React.FC<SearchProps> = ({ onTrackSelect }) => {
     <SearchSection>
       <SectionTitle>Songs</SectionTitle>
       <TrackList>
-        {songs.map((track, index) => (
+        {songs.map((track, index) => {
+          const artworkUrl = getTrackArtworkUrl(track);
+          return (
           <TrackItem
             key={track.id}
             ref={element => { trackSelection.rowRefs.current[index] = element }}
@@ -504,16 +504,19 @@ const Search: React.FC<SearchProps> = ({ onTrackSelect }) => {
             aria-selected={trackSelection.selectedIds.has(track.id)}
             $selected={trackSelection.selectedIds.has(track.id)}
             onClick={event => trackSelection.selectIndex(index, event)}
-            onDoubleClick={() => handleTrackPlay(track)}
-            onKeyDown={event => trackSelection.handleKeyDown(index, event, () => handleTrackPlay(track))}
+            onDoubleClick={() => handleTrackPlay(track, songs)}
+            onKeyDown={event => trackSelection.handleKeyDown(index, event, () => handleTrackPlay(track, songs))}
             onContextMenu={event => {
               event.preventDefault();
               trackSelection.ensureSelected(index);
               setSelectionMenu({ x: event.clientX, y: event.clientY });
             }}
           >
-            <TrackCover>
-              <MusicIcon size={20} />
+            <TrackCover
+              $imageUrl={artworkUrl}
+              $fallback={getArtworkGradient(`${track.album}|${track.artist}`)}
+            >
+              {artworkUrl ? null : <MusicIcon size={20} />}
             </TrackCover>
             <TrackInfo>
               <TrackName>{track.title}</TrackName>
@@ -526,19 +529,25 @@ const Search: React.FC<SearchProps> = ({ onTrackSelect }) => {
               tracks={trackSelection.selectedIds.has(track.id) ? trackSelection.selectedTracks : []}
             />
           </TrackItem>
-        ))}
+          )
+        })}
       </TrackList>
     </SearchSection>
   );
 
-  const renderAlbums = (albums: Array<{ name: string; artist: string; year: number }>) => (
+  const renderAlbums = (albums: Album[]) => (
     <SearchSection>
       <SectionTitle>Albums</SectionTitle>
       <GridContainer>
-        {albums.map((album, index) => (
-          <Card key={index} onClick={() => handleAlbumClick(album.name)}>
-            <CardCover $gradient="linear-gradient(135deg, #9b59b6, #c39bd3)">
-              <Disc size={48} />
+        {albums.map((album) => {
+          const artworkUrl = getAlbumArtworkUrl(album);
+          return (
+          <Card key={album.id || `${album.name}-${album.artist}`} onClick={() => handleAlbumClick(album)}>
+            <CardCover
+              $imageUrl={artworkUrl}
+              $gradient={getArtworkGradient(`${album.name}|${album.artist}`)}
+            >
+              {artworkUrl ? null : <Disc size={48} />}
             </CardCover>
             <CardInfo>
               <CardTitle>{album.name}</CardTitle>
@@ -546,26 +555,38 @@ const Search: React.FC<SearchProps> = ({ onTrackSelect }) => {
               <CardMeta>{album.year}</CardMeta>
             </CardInfo>
           </Card>
-        ))}
+          )
+        })}
       </GridContainer>
     </SearchSection>
   );
 
-  const renderArtists = (artists: Array<{ id?: string; name: string; track_count: number; album_count: number }>) => (
+  const renderArtists = (artists: SearchResult['artists']) => (
     <SearchSection>
       <SectionTitle>Artists</SectionTitle>
       <GridContainer>
-        {artists.map((artist) => (
+        {artists.map((artist) => {
+          const artworkUrl = resolveMediaUrl(
+            artist.image_large_url ||
+            artist.image_medium_url ||
+            artist.image_url ||
+            artist.image_small_url,
+          );
+          return (
           <Card key={artist.id || artist.name} onClick={() => handleArtistClick(artist)}>
-            <CardCover $gradient="linear-gradient(135deg, #e74c3c, #ec7063)">
-              <User size={48} />
+            <CardCover
+              $imageUrl={artworkUrl}
+              $gradient={getArtworkGradient(artist.name)}
+            >
+              {artworkUrl ? null : <User size={48} />}
             </CardCover>
             <CardInfo>
               <CardTitle>{artist.name}</CardTitle>
               <CardMeta>{artist.track_count} tracks • {artist.album_count} albums</CardMeta>
             </CardInfo>
           </Card>
-        ))}
+          )
+        })}
       </GridContainer>
     </SearchSection>
   );

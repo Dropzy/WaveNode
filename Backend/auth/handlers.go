@@ -344,6 +344,10 @@ func (h *AuthHandler) issueJWT(userID string, r *http.Request) (string, error) {
 func deviceNameFromUserAgent(userAgent string) string {
 	lower := strings.ToLower(userAgent)
 	switch {
+	case strings.Contains(lower, "wavenode desktop") || strings.Contains(lower, "electron"):
+		return "WaveNode desktop app"
+	case strings.Contains(lower, "wavenode android") || strings.Contains(lower, "okhttp"):
+		return "WaveNode mobile app"
 	case strings.Contains(lower, "android"):
 		return "Android device"
 	case strings.Contains(lower, "iphone") || strings.Contains(lower, "ipad"):

@@ -13,8 +13,8 @@ export const GlobalStyle = createGlobalStyle`
       sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background-color: #121212;
-    color: #fff;
+    background-color: ${({ theme }) => theme.colors.background};
+    color: ${({ theme }) => theme.colors.text};
     overflow: hidden;
   }
 
@@ -44,13 +44,13 @@ export const GlobalStyle = createGlobalStyle`
   select:focus-visible,
   textarea:focus-visible,
   [tabindex]:focus-visible {
-    outline: 2px solid #1ed760;
+    outline: 2px solid ${({ theme }) => theme.colors.accent};
     outline-offset: 2px;
   }
 
   ::selection {
-    background: rgba(29, 185, 84, 0.45);
-    color: #fff;
+    background: ${({ theme }) => theme.colors.selection};
+    color: ${({ theme }) => theme.colors.text};
   }
 
   a {
@@ -77,12 +77,12 @@ export const GlobalStyle = createGlobalStyle`
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #5a5a5a;
+    background: ${({ theme }) => theme.colors.borderStrong};
     border-radius: 6px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #888;
+    background: ${({ theme }) => theme.colors.accent};
   }
 
   @media (prefers-reduced-motion: reduce) {

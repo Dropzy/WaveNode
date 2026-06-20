@@ -46,6 +46,7 @@ type Router struct {
 	autoUpdater       *scanner.AutoUpdater
 	setupToken        string
 	subsonicAuthCache sync.Map
+	playbackHandoffs  sync.Map
 	corsConfig        struct {
 		AllowedOrigins []string `json:"allowed_origins"`
 		AllowedMethods []string `json:"allowed_methods"`
@@ -70,7 +71,7 @@ func NewRouter(
 	scanStore := database.NewScanStore(db)
 	enrichmentHandler := NewEnrichmentHandler(db, scanStore)
 
-	return &Router{
+	router := &Router{
 		authHandler:       authHandler,
 		musicHandler:      musicHandler,
 		playlistHandler:   playlistHandler,
@@ -81,6 +82,8 @@ func NewRouter(
 		scanStore:         scanStore,
 		corsConfig:        corsConfig,
 	}
+	router.startArtistMetadataRefreshLoop()
+	return router
 }
 
 // SetEnrichmentScanner sets enrichment scanner on enrichment handler
@@ -136,6 +139,7 @@ func (r *Router) SetupRoutes() *mux.Router {
 	protected.HandleFunc("/music/search/comprehensive", r.musicHandler.ComprehensiveSearch).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/music/{id}", r.musicHandler.GetMusic).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/music/{id}/stream", r.musicHandler.StreamMusic).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/music/{id}/download", r.musicHandler.DownloadMusic).Methods("GET", "OPTIONS")
 	// Artwork serving route (public - no auth required)
 	public.HandleFunc("/artwork/{filename}", r.serveArtwork).Methods("GET", "OPTIONS")
 
@@ -147,7 +151,9 @@ func (r *Router) SetupRoutes() *mux.Router {
 	protected.HandleFunc("/albums/{id}/tracks", r.getAlbumTracksByID).Methods("GET", "OPTIONS") // New ID-based endpoint
 	protected.HandleFunc("/albums/{name}/tracks", r.getAlbumTracks).Methods("GET", "OPTIONS")   // Keep name-based for backward compatibility
 	protected.HandleFunc("/artists", r.getArtists).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/artists/lookup", r.lookupArtistMetadata).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/artists/{id}", r.getArtistByID).Methods("GET", "OPTIONS") // New hash-based endpoint
+	protected.HandleFunc("/artists/{id}/image", r.getArtistImage).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/artists/{id}/tracks", r.getArtistTracksByID).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/search", r.comprehensiveSearch).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/liked-tracks", r.getLikedTracks).Methods("GET", "OPTIONS")
@@ -158,10 +164,25 @@ func (r *Router) SetupRoutes() *mux.Router {
 	protected.HandleFunc("/ratings/{id}", r.setRating).Methods("PUT", "OPTIONS")
 	protected.HandleFunc("/playback-profile", r.getPlaybackProfile).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/playback-profile", r.updatePlaybackProfile).Methods("PUT", "OPTIONS")
+	protected.HandleFunc("/playback/connect", r.createPlaybackHandoff).Methods("POST", "OPTIONS")
+	protected.HandleFunc("/playback/connect/pending", r.consumePlaybackHandoff).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/scrobble/settings", r.getScrobbleSettings).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/scrobble/settings", r.updateScrobbleSettings).Methods("PUT", "OPTIONS")
+	protected.HandleFunc("/scrobble/lastfm/start", r.startLastFMAuth).Methods("POST", "OPTIONS")
+	protected.HandleFunc("/scrobble/lastfm/complete", r.completeLastFMAuth).Methods("POST", "OPTIONS")
+	protected.HandleFunc("/scrobble/lastfm", r.disconnectLastFM).Methods("DELETE", "OPTIONS")
+	protected.HandleFunc("/scrobble/now-playing/{id}", r.scrobbleNowPlaying).Methods("POST", "OPTIONS")
+	protected.HandleFunc("/scrobble/listened/{id}", r.scrobbleListened).Methods("POST", "OPTIONS")
 	protected.HandleFunc("/history", r.getListeningHistory).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/history/export", r.exportListeningHistory).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/history", r.clearListeningHistory).Methods("DELETE", "OPTIONS")
 	protected.HandleFunc("/plugins/home-rows", r.getPluginHomeRows).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/plugins/radio-metadata", r.getPluginRadioMetadata).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/plugins/track-actions", r.getPluginTrackActions).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/discovery/settings", r.getDiscoverySettings).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/discovery/settings", r.updateDiscoverySettings).Methods("PUT", "OPTIONS")
+	protected.HandleFunc("/discovery/preview", r.previewDiscovery).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/discovery/import", r.importDiscoveryPlaylist).Methods("POST", "OPTIONS")
 
 	// Playlist routes
 	protected.HandleFunc("/playlists", r.playlistHandler.GetPlaylists).Methods("GET", "OPTIONS")
@@ -209,6 +230,8 @@ func (r *Router) SetupRoutes() *mux.Router {
 	admin.HandleFunc("/system/status", r.getSystemStatus).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/library/diagnostics", r.getLibraryDiagnostics).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/library", r.clearLibrary).Methods("DELETE", "OPTIONS")
+	admin.HandleFunc("/integrations/lastfm", r.getAdminLastFMIntegration).Methods("GET", "OPTIONS")
+	admin.HandleFunc("/integrations/lastfm", r.updateAdminLastFMIntegration).Methods("PUT", "OPTIONS")
 	admin.HandleFunc("/stats", r.getStats).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/logs", r.getLogs).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/users", r.getUsers).Methods("GET", "OPTIONS")
@@ -219,6 +242,10 @@ func (r *Router) SetupRoutes() *mux.Router {
 	admin.HandleFunc("/scans", r.getScanHistory).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/scans/{id}", r.getScanDetails).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/artists/discover-images", r.discoverArtistImages).Methods("POST", "OPTIONS")
+	admin.HandleFunc("/artists/{id}/refresh-metadata", r.refreshArtistMetadataEndpoint).Methods("POST", "OPTIONS")
+	admin.HandleFunc("/artists/{id}/image-candidates", r.listArtistImageCandidates).Methods("GET", "OPTIONS")
+	admin.HandleFunc("/artists/{id}/image-primary", r.setPrimaryArtistImage).Methods("PUT", "OPTIONS")
+	admin.HandleFunc("/artists/{id}/image-candidates/{imageId}", r.updateArtistImageAttribution).Methods("PUT", "OPTIONS")
 	admin.HandleFunc("/artists/{id}/image", r.uploadArtistImage).Methods("POST", "OPTIONS")
 	admin.HandleFunc("/artists/{id}/image", r.deleteArtistImage).Methods("DELETE", "OPTIONS")
 	admin.HandleFunc("/plugins", r.getAdminPlugins).Methods("GET", "OPTIONS")
@@ -329,14 +356,17 @@ func (r *Router) getArtistByID(w http.ResponseWriter, req *http.Request) {
 
 	artist, err := r.db.GetArtistByHash(artistID)
 	if err != nil {
-		response := map[string]interface{}{
-			"success": false,
-			"error":   err.Error(),
+		artist, err = r.db.GetLibraryArtistByID(artistID)
+		if err != nil {
+			response := map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(response)
+			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(response)
-		return
 	}
 
 	response := map[string]interface{}{
@@ -376,14 +406,17 @@ func (r *Router) getArtistTracksByID(w http.ResponseWriter, req *http.Request) {
 
 		artist, err = r.db.GetArtistByName(decodedArtistName)
 		if err != nil {
-			response := map[string]interface{}{
-				"success": false,
-				"error":   "Artist not found",
+			artist, err = r.db.GetLibraryArtistByID(artistID)
+			if err != nil {
+				response := map[string]interface{}{
+					"success": false,
+					"error":   "Artist not found",
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				json.NewEncoder(w).Encode(response)
+				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(response)
-			return
 		}
 	}
 
@@ -701,6 +734,18 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 
 // getStats returns server statistics (admin only)
 func (r *Router) getStats(w http.ResponseWriter, req *http.Request) {
+	userID, err := auth.GetUserFromContext(req)
+	if err != nil {
+		response := map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
 	// Get enrichment statistics
 	enrichmentStats, err := r.db.GetEnrichmentStatistics()
 	if err != nil {
@@ -718,7 +763,7 @@ func (r *Router) getStats(w http.ResponseWriter, req *http.Request) {
 	music, _ := r.db.GetAllMusic()
 	artists, _ := r.db.GetAllArtists()
 	albums, _ := r.db.GetAllAlbums()
-	playlists, _ := r.db.GetAllPlaylists()
+	playlists, _ := r.db.GetUserPlaylists(userID)
 
 	totalTracks := len(music)
 	totalArtists := len(artists)
@@ -1103,8 +1148,20 @@ func (r *Router) addToRecentlyPlayed(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	source := strings.ToLower(strings.TrimSpace(req.URL.Query().Get("source")))
+	if source == "" {
+		source = "web"
+	}
+	if source != "web" && source != "desktop" && source != "mobile" && source != "subsonic" {
+		source = "web"
+	}
+	device := strings.TrimSpace(req.URL.Query().Get("device"))
+	if len(device) > 80 {
+		device = device[:80]
+	}
+
 	// Add track to their recently played list
-	err = r.db.AddToRecentlyPlayed(userID, trackID)
+	err = r.db.AddToRecentlyPlayedFrom(userID, trackID, source, device)
 	if err != nil {
 		response := map[string]interface{}{
 			"success": false,
@@ -1687,8 +1744,16 @@ func (r *Router) searchAlbums(query string) ([]map[string]interface{}, error) {
 			strings.Contains(strings.ToLower(album.Artist), searchLower) {
 
 			albumMap := map[string]interface{}{
-				"name":   album.Name,
-				"artist": album.Artist,
+				"id":                   album.ID,
+				"name":                 album.Name,
+				"artist":               album.Artist,
+				"year":                 album.Year,
+				"track_count":          album.TrackCount,
+				"cover_art_url":        album.CoverArtURL,
+				"cover_art_small_url":  album.CoverArtSmallURL,
+				"cover_art_medium_url": album.CoverArtMediumURL,
+				"cover_art_large_url":  album.CoverArtLargeURL,
+				"cover_art_source":     album.CoverArtSource,
 			}
 			filteredAlbums = append(filteredAlbums, albumMap)
 		}

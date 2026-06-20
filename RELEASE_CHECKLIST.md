@@ -42,4 +42,4 @@ Run the repeatable local checks with:
 
 ## Known Scope
 
-The web application and Docker deployment are the primary release targets. Treat the Android client as separate preview software until its build, authentication, playback, and release signing have their own completed checklist.
+The Docker/web app is the primary server release target. The Electron desktop app and Android app are companion clients for existing WaveNode servers; verify their login, discovery, playback, remote-control, and packaging flows before publishing client installers or APKs.

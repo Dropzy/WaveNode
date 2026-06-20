@@ -1,9 +1,32 @@
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import styled from 'styled-components'
-import { ListPlus, MoreVertical, X } from 'lucide-react'
-import { playlistAPI, type Music, type Playlist } from '../services/api'
+import { Download, ListPlus, MoreVertical, X } from 'lucide-react'
+import { musicAPI, playlistAPI, pluginsAPI, type Music, type Playlist, type PluginTrackAction } from '../services/api'
 import { playlistsChangedEvent } from '../utils/playlistEvents'
+
+let trackActionsCache: PluginTrackAction[] | null = null
+
+const getPluginTrackActions = async () => {
+  if (trackActionsCache) {
+    return trackActionsCache
+  }
+  trackActionsCache = await pluginsAPI.getTrackActions()
+  return trackActionsCache
+}
+
+const fallbackDownloadFilename = (track: Music) => {
+  const filePathName = track.file_path?.split(/[\\/]/).pop()
+  return filePathName || `${track.artist} - ${track.title}`
+}
+
+const downloadTrack = async (track: Music, action: PluginTrackAction) => {
+  if (action.action_type !== 'download') {
+    return
+  }
+
+  await musicAPI.downloadMusic(track.id, fallbackDownloadFilename(track))
+}
 
 const Trigger = styled.button`
   width: 32px;
@@ -282,6 +305,19 @@ interface TrackActionsMenuProps {
 export const TrackActionsMenu: React.FC<TrackActionsMenuProps> = ({ track, tracks = [], excludePlaylistId }) => {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [pluginActions, setPluginActions] = useState<PluginTrackAction[]>(trackActionsCache || [])
+
+  useEffect(() => {
+    let current = true
+    void getPluginTrackActions()
+      .then(actions => {
+        if (current) setPluginActions(actions)
+      })
+      .catch(error => console.error('Failed to load plugin track actions:', error))
+    return () => {
+      current = false
+    }
+  }, [])
 
   useEffect(() => {
     if (!menuPosition) {
@@ -324,6 +360,20 @@ export const TrackActionsMenu: React.FC<TrackActionsMenuProps> = ({ track, track
             <ListPlus size={17} />
             {tracks.length > 1 ? `Add ${tracks.length} to Playlist` : 'Add to Playlist'}
           </MenuItem>
+          {pluginActions.map(action => (
+            <MenuItem
+              key={`${action.plugin_id}:${action.id}`}
+              onClick={() => {
+                setMenuPosition(null)
+                void downloadTrack(track, action).catch(error => {
+                  console.error('Failed to download track:', error)
+                })
+              }}
+            >
+              <Download size={17} />
+              {action.label}
+            </MenuItem>
+          ))}
         </Menu>,
         document.body,
       )}
@@ -352,6 +402,19 @@ export const TrackSelectionContextMenu: React.FC<TrackSelectionContextMenuProps>
   excludePlaylistId,
 }) => {
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [pluginActions, setPluginActions] = useState<PluginTrackAction[]>(trackActionsCache || [])
+
+  useEffect(() => {
+    let current = true
+    void getPluginTrackActions()
+      .then(actions => {
+        if (current) setPluginActions(actions)
+      })
+      .catch(error => console.error('Failed to load plugin track actions:', error))
+    return () => {
+      current = false
+    }
+  }, [])
 
   useEffect(() => {
     if (!position) return
@@ -383,6 +446,20 @@ export const TrackSelectionContextMenu: React.FC<TrackSelectionContextMenuProps>
             <ListPlus size={17} />
             {tracks.length > 1 ? `Add ${tracks.length} to Playlist` : 'Add to Playlist'}
           </MenuItem>
+          {pluginActions.map(action => (
+            <MenuItem
+              key={`${action.plugin_id}:${action.id}`}
+              onClick={() => {
+                onClose()
+                void Promise.all(tracks.map(track => downloadTrack(track, action))).catch(error => {
+                  console.error('Failed to download selected tracks:', error)
+                })
+              }}
+            >
+              <Download size={17} />
+              {tracks.length > 1 ? `${action.label} (${tracks.length})` : action.label}
+            </MenuItem>
+          ))}
         </Menu>,
         document.body,
       )}

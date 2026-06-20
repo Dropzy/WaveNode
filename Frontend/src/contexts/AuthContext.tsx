@@ -24,11 +24,28 @@ type AuthAction =
   | { type: 'REGISTER_SUCCESS'; payload: { user: User; token: string } }
   | { type: 'REGISTER_FAILURE' };
 
+const getInitialToken = (): string | null => {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    return null;
+  }
+
+  if (tokenUtils.isTokenExpired(token)) {
+    tokenUtils.clearToken();
+    return null;
+  }
+
+  api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+  return token;
+};
+
+const initialToken = getInitialToken();
+
 const initialState: AuthState = {
   user: null,
-  token: localStorage.getItem('token'),
-  isLoading: true, // Start with loading true until we verify the token
-  isAuthenticated: false,
+  token: initialToken,
+  isLoading: false,
+  isAuthenticated: Boolean(initialToken),
 };
 
 const authReducer = (state: AuthState, action: AuthAction): AuthState => {

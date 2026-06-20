@@ -5,8 +5,21 @@ import { historyAPI, type ListeningHistoryEntry } from '../services/api'
 import { useAudio } from '../contexts/AudioContext'
 import { getTrackArtworkUrl } from '../utils/mediaUrl'
 
+const historySourceLabel = (entry: ListeningHistoryEntry) => {
+  switch ((entry.source || '').toLowerCase()) {
+    case 'desktop':
+      return 'Desktop - WaveNode'
+    case 'mobile':
+      return 'Mobile - WaveNode'
+    case 'subsonic':
+      return 'Mobile - Subsonic Client'
+    default:
+      return 'Web - WaveNode'
+  }
+}
+
 export default function History() {
-  const { playTrack } = useAudio()
+  const { playFromQueue } = useAudio()
   const [entries, setEntries] = useState<ListeningHistoryEntry[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -43,11 +56,11 @@ export default function History() {
       {error && <ErrorText>{error}</ErrorText>}
       {loading ? <Empty>Loading history...</Empty> : entries.length === 0 ? <Empty>No matching plays.</Empty> : (
         <List>
-          {entries.map(entry => (
-            <Row key={entry.id} onDoubleClick={() => playTrack(entry.track)}>
+          {entries.map((entry, index) => (
+            <Row key={entry.id} onDoubleClick={() => playFromQueue(entries.map(item => item.track), index)}>
               <Artwork $url={getTrackArtworkUrl(entry.track)}><Play size={16} /></Artwork>
               <Track><strong>{entry.track.title}</strong><span>{entry.track.artist} · {entry.track.album}</span></Track>
-              <Source>{entry.source}{entry.device ? ` · ${entry.device}` : ''}</Source>
+              <Source>{historySourceLabel(entry)}</Source>
               <Time>{new Date(entry.played_at).toLocaleString()}</Time>
             </Row>
           ))}
@@ -67,7 +80,7 @@ const List = styled.div`display:grid;gap:7px;`
 const Row = styled.div`display:grid;grid-template-columns:48px minmax(180px,1fr) minmax(130px,.5fr) minmax(170px,.5fr);align-items:center;gap:14px;padding:10px 14px;border-radius:9px;background:#181a19;&:hover{background:#242725;}@media(max-width:760px){grid-template-columns:44px 1fr;.history-source{display:none;}}`
 const Artwork = styled.div<{ $url?: string }>`width:44px;height:44px;display:grid;place-items:center;border-radius:5px;background:${props => props.$url ? `url("${props.$url}") center/cover` : '#315c40'};color:transparent;&:hover{color:#fff;background-blend-mode:multiply;}`
 const Track = styled.div`display:grid;gap:4px;min-width:0;strong,span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}span{font-size:12px;color:#aeb5b0;}`
-const Source = styled.div.attrs({ className: 'history-source' })`font-size:12px;color:#9ca39e;text-transform:capitalize;`
+const Source = styled.div.attrs({ className: 'history-source' })`font-size:12px;color:#9ca39e;`
 const Time = styled.time`font-size:12px;color:#b8beb9;text-align:right;`
 const Empty = styled.div`padding:70px;text-align:center;color:#929a94;`
 const ErrorText = styled.p`color:#ff858d;`

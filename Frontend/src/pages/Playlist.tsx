@@ -688,7 +688,7 @@ const formatDateAdded = (dateString: string): string => {
 
 export const PlaylistPage: React.FC = () => {
   const { id } = useParams<{ id: string }>()
-  const { playTrack, playPlaylist, playPlaylistShuffled, addToQueue } = useAudio()
+  const { playFromQueue, playPlaylist, playPlaylistShuffled, addToQueue } = useAudio()
   const navigate = useNavigate()
   const [playlist, setPlaylist] = useState<Playlist | null>(null)
   const [tracks, setTracks] = useState<Music[]>([])
@@ -811,7 +811,7 @@ export const PlaylistPage: React.FC = () => {
   const handleTrackKeyDown = (index: number, event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Enter') {
       event.preventDefault()
-      void handlePlayTrack(tracks[index])
+      handlePlayTrack(tracks[index])
       return
     }
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
@@ -873,7 +873,8 @@ export const PlaylistPage: React.FC = () => {
     if (e) {
       e.stopPropagation()
     }
-    playTrack(track)
+    const index = tracks.findIndex(item => item.id === track.id)
+    playFromQueue(tracks, index === -1 ? 0 : index)
   }
 
   const handlePlayAll = () => {

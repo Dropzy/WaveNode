@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import styled from 'styled-components'
+import styled, { useTheme } from 'styled-components'
 import {
   Activity,
   AlertTriangle,
@@ -12,6 +12,7 @@ import {
   FolderOpen,
   HardDrive,
   Image,
+  KeyRound,
   LayoutDashboard,
   ListMusic,
   Music,
@@ -34,11 +35,11 @@ import {
   XCircle,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { api, PluginRecord, User } from '../services/api'
+import { adminArtistImagesAPI, adminIntegrationsAPI, api, ArtistImage, PluginRecord, type LastFMIntegrationSettings, User } from '../services/api'
 import websocketService, { ScanStatus as WebSocketScanStatus } from '../services/websocket'
 import { getArtworkGradient, resolveMediaUrl } from '../utils/mediaUrl'
 
-type AdminTab = 'overview' | 'library' | 'users' | 'enrichment' | 'plugins' | 'system'
+type AdminTab = 'overview' | 'library' | 'users' | 'enrichment' | 'plugins' | 'integrations' | 'system'
 type JobAction = 'library' | 'metadata' | 'artwork' | null
 
 interface AdminStats {
@@ -230,10 +231,10 @@ const Notice = styled.div<{ $type: 'success' | 'error' }>`
   gap: 16px;
   margin-bottom: 18px;
   padding: 13px 16px;
-  border: 1px solid ${props => props.$type === 'success' ? 'rgba(30, 215, 96, .4)' : 'rgba(255, 107, 107, .45)'};
+  border: 1px solid ${props => props.$type === 'success' ? props.theme.colors.borderStrong : 'rgba(255, 107, 107, .45)'};
   border-radius: 10px;
-  background: ${props => props.$type === 'success' ? 'rgba(30, 215, 96, .12)' : 'rgba(255, 107, 107, .12)'};
-  color: ${props => props.$type === 'success' ? '#65e894' : '#ff9292'};
+  background: ${props => props.$type === 'success' ? props.theme.colors.accentSoft : 'rgba(255, 107, 107, .12)'};
+  color: ${props => props.$type === 'success' ? props.theme.colors.accent : '#ff9292'};
 `
 
 const DismissButton = styled.button`
@@ -332,7 +333,7 @@ const StatCard = styled.div`
 `
 
 const StatIcon = styled.div`
-  color: #1ed760;
+  color: ${({ theme }) => theme.colors.accent};
   margin-bottom: 18px;
 `
 
@@ -380,8 +381,8 @@ const ActionIcon = styled.div`
   height: 42px;
   margin-bottom: 18px;
   border-radius: 10px;
-  color: #1ed760;
-  background: rgba(30, 215, 96, .13);
+  color: ${({ theme }) => theme.colors.accent};
+  background: ${({ theme }) => theme.colors.accentSoft};
 `
 
 const ActionTitle = styled.h3`
@@ -404,10 +405,10 @@ const Button = styled.button<{ $variant?: 'primary' | 'danger' | 'secondary' }>`
   gap: 8px;
   min-height: 40px;
   padding: 9px 15px;
-  border: 1px solid ${props => props.$variant === 'danger' ? '#7f3039' : props.$variant === 'primary' ? '#1ed760' : '#4b4b4b'};
+  border: 1px solid ${props => props.$variant === 'danger' ? '#7f3039' : props.$variant === 'primary' ? props.theme.colors.accent : props.theme.colors.borderStrong};
   border-radius: 999px;
-  background: ${props => props.$variant === 'danger' ? '#722c34' : props.$variant === 'primary' ? '#1ed760' : 'transparent'};
-  color: ${props => props.$variant === 'primary' ? '#08150c' : '#fff'};
+  background: ${props => props.$variant === 'danger' ? '#722c34' : props.$variant === 'primary' ? props.theme.colors.accentGradient : 'transparent'};
+  color: ${props => props.$variant === 'primary' ? props.theme.colors.accentText : props.theme.colors.text};
   font-weight: 750;
 
   &:hover:not(:disabled) {
@@ -578,10 +579,10 @@ const HealthScoreCard = styled.div<{ $score: number }>`
   justify-items: center;
   min-height: 220px;
   padding: 24px;
-  border: 1px solid ${props => props.$score >= 90 ? 'rgba(30, 215, 96, .35)' : props.$score >= 70 ? 'rgba(255, 193, 7, .38)' : 'rgba(255, 107, 107, .4)'};
+  border: 1px solid ${props => props.$score >= 90 ? props.theme.colors.borderStrong : props.$score >= 70 ? 'rgba(255, 193, 7, .38)' : 'rgba(255, 107, 107, .4)'};
   border-radius: 12px;
   text-align: center;
-  background: ${props => props.$score >= 90 ? 'rgba(30, 215, 96, .08)' : props.$score >= 70 ? 'rgba(255, 193, 7, .08)' : 'rgba(255, 107, 107, .08)'};
+  background: ${props => props.$score >= 90 ? props.theme.colors.accentSoft : props.$score >= 70 ? 'rgba(255, 193, 7, .08)' : 'rgba(255, 107, 107, .08)'};
 `
 
 const HealthScoreValue = styled.div`
@@ -649,7 +650,7 @@ const StorageProgressFill = styled.div<{ $percent: number; $status: SourceDiagno
   width: ${props => Math.min(100, Math.max(0, props.$percent))}%;
   height: 100%;
   border-radius: inherit;
-  background: ${props => props.$status === 'critical' ? '#ff6b6b' : props.$status === 'warning' ? '#ffc107' : '#1ed760'};
+  background: ${props => props.$status === 'critical' ? '#ff6b6b' : props.$status === 'warning' ? '#ffc107' : props.theme.colors.accentGradient};
 `
 
 const IssueSections = styled.div`
@@ -749,6 +750,43 @@ const ArtistImagePreview = styled.div<{ $imageUrl?: string; $fallback: string }>
   color: #fff;
 `
 
+const CandidateList = styled.div`
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding: 8px 0 0 72px;
+
+  @media (max-width: 680px) {
+    padding-left: 0;
+  }
+`
+
+const CandidateRow = styled.div`
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid #303030;
+  border-radius: 8px;
+  background: #181818;
+
+  @media (max-width: 680px) {
+    grid-template-columns: 58px minmax(0, 1fr);
+
+    ${ButtonRow} {
+      grid-column: 1 / -1;
+    }
+  }
+`
+
+const CandidateImage = styled.img`
+  width: 74px;
+  height: 74px;
+  object-fit: cover;
+  border-radius: 8px;
+`
+
 const HiddenFileInput = styled.input`
   display: none;
 `
@@ -782,15 +820,15 @@ const ProgressFill = styled.div<{ $progress: number }>`
   width: ${props => Math.min(100, Math.max(0, props.$progress))}%;
   height: 100%;
   border-radius: inherit;
-  background: #1ed760;
+  background: ${({ theme }) => theme.colors.accentGradient};
   transition: width .25s ease;
 `
 
 const CurrentJob = styled.div`
   padding: 18px;
-  border: 1px solid rgba(30, 215, 96, .3);
+  border: 1px solid ${({ theme }) => theme.colors.borderStrong};
   border-radius: 12px;
-  background: rgba(30, 215, 96, .08);
+  background: ${({ theme }) => theme.colors.accentSoft};
 `
 
 const JobHeader = styled.div`
@@ -830,8 +868,8 @@ const StatusBadge = styled.span<{ $status: string }>`
   font-size: 12px;
   font-weight: 800;
   text-transform: capitalize;
-  color: ${props => props.$status.startsWith('completed') ? '#6de99a' : props.$status === 'failed' ? '#ff8d8d' : '#ffd56a'};
-  background: ${props => props.$status.startsWith('completed') ? 'rgba(30, 215, 96, .12)' : props.$status === 'failed' ? 'rgba(255, 107, 107, .13)' : 'rgba(255, 193, 7, .13)'};
+  color: ${props => props.$status.startsWith('completed') ? props.theme.colors.accent : props.$status === 'failed' ? '#ff8d8d' : '#ffd56a'};
+  background: ${props => props.$status.startsWith('completed') ? props.theme.colors.accentSoft : props.$status === 'failed' ? 'rgba(255, 107, 107, .13)' : 'rgba(255, 193, 7, .13)'};
 `
 
 const HistoryList = styled.div`
@@ -991,6 +1029,28 @@ const PluginForm = styled.form`
   }
 `
 
+const IntegrationForm = styled.div`
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+
+  label {
+    display: grid;
+    gap: 7px;
+    color: #b7b7b7;
+    font-size: 14px;
+  }
+
+  input {
+    width: 100%;
+    padding: 11px 12px;
+    border: 1px solid #454545;
+    border-radius: 8px;
+    color: #fff;
+    background: #242424;
+  }
+`
+
 const PluginMeta = styled.div`
   display: flex;
   flex-wrap: wrap;
@@ -1070,38 +1130,20 @@ const scanResultText = (scan: ScanStatus) => {
   return `${scan.songs_added || 0} added · ${scan.songs_updated || 0} updated`
 }
 
-const radioPluginTemplate = JSON.stringify({
+const downloadPluginTemplate = JSON.stringify({
   schema_version: 1,
-  id: 'community.radio',
-  name: 'Community Radio',
+  id: 'mobile.downloads',
+  name: 'Mobile Downloads',
   version: '1.0.0',
-  description: 'Adds curated internet radio stations to the WaveNode home page.',
-  homepage: 'https://somafm.com',
-  permissions: ['network', 'playback'],
+  description: 'Adds a Download to Device action to track menus.',
+  permissions: ['download'],
   contributes: {
-    home_rows: [{
-      id: 'radio-stations',
-      title: 'Radio stations',
-      subtitle: 'Live stations provided by the Community Radio plugin',
-      type: 'radio',
-      items: [
-        {
-          id: 'groove-salad',
-          title: 'Groove Salad',
-          subtitle: 'Ambient and downtempo',
-          stream_url: 'https://ice1.somafm.com/groovesalad-128-mp3',
-          homepage_url: 'https://somafm.com/groovesalad/',
-          image_url: 'https://somafm.com/img3/groovesalad-400.jpg',
-        },
-        {
-          id: 'drone-zone',
-          title: 'Drone Zone',
-          subtitle: 'Atmospheric ambient space music',
-          stream_url: 'https://ice1.somafm.com/dronezone-128-mp3',
-          homepage_url: 'https://somafm.com/dronezone/',
-          image_url: 'https://somafm.com/img3/dronezone-400.jpg',
-        },
-      ],
+    track_actions: [{
+      id: 'download-to-device',
+      label: 'Download to Device',
+      icon: 'download',
+      action_type: 'download',
+      url: '/api/music/{id}/download',
     }],
   },
 }, null, 2)
@@ -1126,6 +1168,7 @@ const statusIcon = (status: string) => {
 
 const AdminDashboard: React.FC = () => {
   const { user } = useAuth()
+  const theme = useTheme()
   const [activeTab, setActiveTab] = useState<AdminTab>('overview')
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [users, setUsers] = useState<User[]>([])
@@ -1151,6 +1194,8 @@ const AdminDashboard: React.FC = () => {
   const [artists, setArtists] = useState<AdminArtist[]>([])
   const [artistImageAction, setArtistImageAction] = useState<string | null>(null)
   const [discoveringArtistImages, setDiscoveringArtistImages] = useState(false)
+  const [candidateArtistId, setCandidateArtistId] = useState<string | null>(null)
+  const [artistImageCandidates, setArtistImageCandidates] = useState<Record<string, ArtistImage[]>>({})
   const [automaticUpdates, setAutomaticUpdates] = useState<AutomaticUpdateSettings>({
     enabled: false,
     interval_minutes: 60,
@@ -1161,8 +1206,15 @@ const AdminDashboard: React.FC = () => {
   const [diagnostics, setDiagnostics] = useState<LibraryDiagnostics | null>(null)
   const [plugins, setPlugins] = useState<PluginRecord[]>([])
   const [showPluginForm, setShowPluginForm] = useState(false)
-  const [pluginManifest, setPluginManifest] = useState(radioPluginTemplate)
+  const [pluginManifest, setPluginManifest] = useState(downloadPluginTemplate)
   const [pluginAction, setPluginAction] = useState<string | null>(null)
+  const [lastFMIntegration, setLastFMIntegration] = useState<LastFMIntegrationSettings>({
+    api_key: '',
+    shared_secret: '',
+    has_shared_secret: false,
+    configured: false,
+  })
+  const [savingLastFMIntegration, setSavingLastFMIntegration] = useState(false)
 
   const runningScan = useMemo(
     () => scans.find(scan => scan.status === 'running' || scan.status === 'pending' || scan.status === 'stopping'),
@@ -1194,6 +1246,7 @@ const AdminDashboard: React.FC = () => {
         systemResponse,
         diagnosticsResponse,
         pluginsResponse,
+        lastFMIntegrationResponse,
       ] = await Promise.all([
         api.get('/admin/stats'),
         api.get('/admin/users'),
@@ -1204,6 +1257,7 @@ const AdminDashboard: React.FC = () => {
         api.get('/admin/system/status'),
         includeDiagnostics ? api.get('/admin/library/diagnostics') : Promise.resolve(null),
         api.get('/admin/plugins'),
+        adminIntegrationsAPI.getLastFM(),
       ])
 
       setStats(statsResponse.data?.data || null)
@@ -1217,6 +1271,10 @@ const AdminDashboard: React.FC = () => {
         setDiagnostics(diagnosticsResponse.data?.data || null)
       }
       setPlugins(pluginsResponse.data?.data || [])
+      setLastFMIntegration({
+        ...lastFMIntegrationResponse,
+        shared_secret: '',
+      })
       setLastUpdated(new Date())
       setError(null)
     } catch (requestError) {
@@ -1280,6 +1338,23 @@ const AdminDashboard: React.FC = () => {
       setError(getErrorMessage(requestError, 'Could not remove the plugin'))
     } finally {
       setPluginAction(null)
+    }
+  }
+
+  const saveLastFMIntegration = async () => {
+    try {
+      setSavingLastFMIntegration(true)
+      setError(null)
+      const saved = await adminIntegrationsAPI.saveLastFM(lastFMIntegration)
+      setLastFMIntegration({
+        ...saved,
+        shared_secret: '',
+      })
+      setSuccess('Last.fm integration saved. Users can now connect Last.fm from Account.')
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, 'Could not save the Last.fm integration'))
+    } finally {
+      setSavingLastFMIntegration(false)
     }
   }
 
@@ -1590,6 +1665,57 @@ const AdminDashboard: React.FC = () => {
     }
   }
 
+  const refreshArtistMetadata = async (artist: AdminArtist) => {
+    try {
+      setArtistImageAction(artist.id)
+      setError(null)
+      const result = await adminArtistImagesAPI.refreshMetadata(artist.id)
+      const candidates = await adminArtistImagesAPI.listCandidates(artist.id)
+      setArtistImageCandidates(current => ({ ...current, [artist.id]: candidates }))
+      setCandidateArtistId(artist.id)
+      setSuccess(result?.image ? `${artist.name}'s open-data image metadata was refreshed` : `No reusable open image was found for ${artist.name}`)
+      await loadDashboard(true)
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, 'Could not refresh artist metadata'))
+    } finally {
+      setArtistImageAction(null)
+    }
+  }
+
+  const showArtistImageCandidates = async (artist: AdminArtist) => {
+    if (candidateArtistId === artist.id) {
+      setCandidateArtistId(null)
+      return
+    }
+    try {
+      setArtistImageAction(artist.id)
+      setError(null)
+      const candidates = await adminArtistImagesAPI.listCandidates(artist.id)
+      setArtistImageCandidates(current => ({ ...current, [artist.id]: candidates }))
+      setCandidateArtistId(artist.id)
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, 'Could not load artist image candidates'))
+    } finally {
+      setArtistImageAction(null)
+    }
+  }
+
+  const selectArtistImageCandidate = async (artist: AdminArtist, image: ArtistImage) => {
+    try {
+      setArtistImageAction(artist.id)
+      setError(null)
+      await adminArtistImagesAPI.setPrimary(artist.id, image.id)
+      const candidates = await adminArtistImagesAPI.listCandidates(artist.id)
+      setArtistImageCandidates(current => ({ ...current, [artist.id]: candidates }))
+      setSuccess(`${artist.name}'s preferred image was updated`)
+      await loadDashboard(true)
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, 'Could not select the artist image'))
+    } finally {
+      setArtistImageAction(null)
+    }
+  }
+
   const metadataPercent = stats?.enrichment.total_tracks
     ? Math.round((stats.enrichment.tracks_with_metadata / stats.enrichment.total_tracks) * 100)
     : 0
@@ -1655,6 +1781,9 @@ const AdminDashboard: React.FC = () => {
         </TabButton>
         <TabButton $active={activeTab === 'plugins'} onClick={() => setActiveTab('plugins')}>
           <Plug size={17} /> Plugins
+        </TabButton>
+        <TabButton $active={activeTab === 'integrations'} onClick={() => setActiveTab('integrations')}>
+          <KeyRound size={17} /> Integrations
         </TabButton>
         <TabButton $active={activeTab === 'system'} onClick={() => setActiveTab('system')}>
           <Activity size={17} /> System
@@ -1759,7 +1888,7 @@ const AdminDashboard: React.FC = () => {
                   {musicSources.map(source => (
                     <SourceRow key={source.id}>
                       <SourcePath title={source.path}>
-                        <FolderOpen size={18} color="#1ed760" />
+                        <FolderOpen size={18} color={theme.colors.accent} />
                         <span>{source.path}</span>
                       </SourcePath>
                       <Button
@@ -2098,7 +2227,7 @@ const AdminDashboard: React.FC = () => {
             <PanelHeader>
               <div>
                 <PanelTitle>Artist images</PanelTitle>
-                <PanelDescription>Upload, replace, or remove images stored directly on this server.</PanelDescription>
+                <PanelDescription>Refresh open-data images, view licenses, choose a preferred image, or upload a permitted fallback.</PanelDescription>
               </div>
               <Button onClick={() => void loadDashboard(true)} disabled={refreshing}>
                 <Spin size={15} $active={refreshing} /> Refresh
@@ -2134,12 +2263,52 @@ const AdminDashboard: React.FC = () => {
                           <Button as="label" htmlFor={inputId} $variant="primary">
                             <Upload size={14} /> {artistImageAction === artist.id ? 'Uploading…' : imageUrl ? 'Replace' : 'Upload'}
                           </Button>
+                          <Button onClick={() => void refreshArtistMetadata(artist)} disabled={artistImageAction !== null}>
+                            <RefreshCw size={14} /> Refresh
+                          </Button>
+                          <Button onClick={() => void showArtistImageCandidates(artist)} disabled={artistImageAction !== null}>
+                            <Image size={14} /> Candidates
+                          </Button>
                           {imageUrl && (
                             <Button $variant="danger" onClick={() => void removeArtistImage(artist)} disabled={artistImageAction !== null}>
                               <Trash2 size={14} /> Remove
                             </Button>
                           )}
                         </ButtonRow>
+                        {candidateArtistId === artist.id && (
+                          <CandidateList>
+                            {(artistImageCandidates[artist.id] || []).length ? (
+                              (artistImageCandidates[artist.id] || []).map(candidate => (
+                                <CandidateRow key={candidate.id}>
+                                  <CandidateImage src={resolveMediaUrl(candidate.thumbnail_url || candidate.image_url)} alt="" />
+                                  <div>
+                                    <PrimaryText>{candidate.source.replace(/_/g, ' ')} {candidate.is_primary ? 'Primary' : ''}</PrimaryText>
+                                    <SecondaryText>
+                                      {candidate.license_name || 'License not provided'} {candidate.author_name ? ` by ${candidate.author_name}` : ''}
+                                    </SecondaryText>
+                                    {candidate.attribution_text && <SecondaryText>{candidate.attribution_text}</SecondaryText>}
+                                  </div>
+                                  <ButtonRow>
+                                    {candidate.source_page_url && (
+                                      <Button as="a" href={candidate.source_page_url} target="_blank" rel="noreferrer">
+                                        Source
+                                      </Button>
+                                    )}
+                                    <Button
+                                      $variant="primary"
+                                      onClick={() => void selectArtistImageCandidate(artist, candidate)}
+                                      disabled={candidate.is_primary || artistImageAction !== null}
+                                    >
+                                      Select
+                                    </Button>
+                                  </ButtonRow>
+                                </CandidateRow>
+                              ))
+                            ) : (
+                              <SecondaryText>No reusable candidates saved yet. Refresh metadata to search MusicBrainz, Wikidata, and Commons.</SecondaryText>
+                            )}
+                          </CandidateList>
+                        )}
                       </ArtistImageRow>
                     )
                   })}
@@ -2175,7 +2344,7 @@ const AdminDashboard: React.FC = () => {
               <div>
                 <PrimaryText>Plugin manifest</PrimaryText>
                 <SecondaryText>
-                  Paste a schema version 1 manifest. This starter adds a radio row and can be edited before installation.
+                  Paste a schema version 1 manifest. This starter adds a track download action and can be edited before installation.
                 </SecondaryText>
               </div>
               <textarea
@@ -2188,8 +2357,8 @@ const AdminDashboard: React.FC = () => {
                 <Button $variant="primary" type="submit" disabled={pluginAction !== null}>
                   <PackagePlus size={15} /> {pluginAction === 'install' ? 'Installing...' : 'Validate and install'}
                 </Button>
-                <Button type="button" onClick={() => setPluginManifest(radioPluginTemplate)}>
-                  Restore radio example
+                <Button type="button" onClick={() => setPluginManifest(downloadPluginTemplate)}>
+                  Restore download example
                 </Button>
                 <Button type="button" onClick={() => setShowPluginForm(false)}>Cancel</Button>
               </ButtonRow>
@@ -2245,9 +2414,61 @@ const AdminDashboard: React.FC = () => {
             ) : (
               <EmptyState>
                 <EmptyIcon><Plug size={34} /></EmptyIcon>
-                No plugins installed. Use the included radio example to add the first home-page row.
+                No plugins installed. Use the included download example to add the first track menu action.
               </EmptyState>
             )}
+          </PanelBody>
+        </Panel>
+      )}
+
+      {activeTab === 'integrations' && (
+        <Panel>
+          <PanelHeader>
+            <div>
+              <PanelTitle>External services</PanelTitle>
+              <PanelDescription>
+                Configure server-wide credentials once. Users only connect their own account from the Account page.
+              </PanelDescription>
+            </div>
+            <Button onClick={() => void loadDashboard(true)} disabled={refreshing}>
+              <Spin size={15} $active={refreshing} /> Refresh
+            </Button>
+          </PanelHeader>
+          <PanelBody>
+            <IntegrationForm>
+              <div>
+                <PrimaryText>Last.fm application</PrimaryText>
+                <SecondaryText>
+                  Save the Last.fm API key and shared secret for this WaveNode server. The shared secret is hidden after saving.
+                </SecondaryText>
+              </div>
+              <label>
+                API key
+                <input
+                  value={lastFMIntegration.api_key}
+                  onChange={event => setLastFMIntegration(current => ({ ...current, api_key: event.target.value }))}
+                  placeholder="Last.fm API key"
+                />
+              </label>
+              <label>
+                Shared secret
+                <input
+                  type="password"
+                  value={lastFMIntegration.shared_secret || ''}
+                  onChange={event => setLastFMIntegration(current => ({ ...current, shared_secret: event.target.value }))}
+                  placeholder={lastFMIntegration.has_shared_secret ? 'Saved. Leave blank to keep existing secret.' : 'Last.fm shared secret'}
+                />
+              </label>
+              <ButtonRow>
+                <Button $variant="primary" onClick={() => void saveLastFMIntegration()} disabled={savingLastFMIntegration}>
+                  <KeyRound size={15} /> {savingLastFMIntegration ? 'Saving...' : 'Save Last.fm integration'}
+                </Button>
+                <StatusBadge $status={lastFMIntegration.configured ? 'completed' : 'failed'}>
+                  {lastFMIntegration.configured ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                  {lastFMIntegration.configured ? 'Configured' : 'Not configured'}
+                </StatusBadge>
+              </ButtonRow>
+            </IntegrationForm>
           </PanelBody>
         </Panel>
       )}
@@ -2331,7 +2552,7 @@ const AdminDashboard: React.FC = () => {
                 <SourceList>
                   {diagnostics.sources.map(source => (
                     <SourceRow key={source.path}>
-                      <FolderOpen size={20} color={source.accessible ? '#1ed760' : '#ff7777'} />
+                      <FolderOpen size={20} color={source.accessible ? theme.colors.accent : '#ff7777'} />
                       <StorageDetails>
                         <StorageHeader>
                           <SourcePath title={source.path}><span>{source.path}</span></SourcePath>
@@ -2440,7 +2661,7 @@ const AdminDashboard: React.FC = () => {
                 </IssueSections>
               ) : (
                 <EmptyState>
-                  <EmptyIcon><CheckCircle2 size={36} color="#1ed760" /></EmptyIcon>
+                  <EmptyIcon><CheckCircle2 size={36} color={theme.colors.accent} /></EmptyIcon>
                   No library problems found.
                 </EmptyState>
               )}
@@ -2516,7 +2737,7 @@ const AdminDashboard: React.FC = () => {
               ) : directoryPicker.directories.length ? (
                 directoryPicker.directories.map(directory => (
                   <DirectoryButton key={directory.path} onClick={() => void browseDirectories(directory.path)}>
-                    <FolderOpen size={19} color="#1ed760" />
+                    <FolderOpen size={19} color={theme.colors.accent} />
                     <span>{directory.name}</span>
                     <ChevronRight size={18} color="#777" />
                   </DirectoryButton>

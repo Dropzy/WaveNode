@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
-import { Headphones, KeyRound, LogOut, MonitorSmartphone, RefreshCw, UserRound, XCircle } from 'lucide-react'
+import { Headphones, KeyRound, LogOut, MonitorSmartphone, Palette, Radio, RefreshCw, UserRound, XCircle } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { accountAPI, api, type PlaybackProfile, type UserSession } from '../services/api'
+import { accountAPI, api, discoveryAPI, type PlaybackProfile, type ScrobbleSettings, type UserSession } from '../services/api'
+import { useAppTheme } from '../contexts/ThemeContext'
+import { appThemes, type AppThemeName } from '../styles/themes'
 
 const Container = styled.section`
   max-width: 760px;
@@ -17,9 +19,10 @@ const Container = styled.section`
 const Card = styled.section`
   margin-top: 22px;
   padding: 22px;
-  border: 1px solid #333;
+  border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: 12px;
-  background: #181818;
+  background: ${({ theme }) => theme.colors.surfaceSoft};
+  box-shadow: 0 18px 45px ${({ theme }) => theme.colors.shadow};
 `
 
 const Form = styled.form`
@@ -30,16 +33,16 @@ const Form = styled.form`
   label {
     display: grid;
     gap: 7px;
-    color: #ddd;
+    color: ${({ theme }) => theme.colors.muted};
     font-size: 14px;
   }
 
   input {
     padding: 11px 12px;
-    border: 1px solid #454545;
+    border: 1px solid ${({ theme }) => theme.colors.border};
     border-radius: 8px;
-    color: #fff;
-    background: #242424;
+    color: ${({ theme }) => theme.colors.text};
+    background: ${({ theme }) => theme.colors.surface};
   }
 `
 
@@ -50,25 +53,56 @@ const Button = styled.button<{ $danger?: boolean }>`
   gap: 8px;
   padding: 10px 16px;
   border-radius: 999px;
-  color: ${props => props.$danger ? '#fff' : '#07130b'};
-  background: ${props => props.$danger ? '#b3261e' : '#1ed760'};
+  color: ${props => props.$danger ? '#fff' : props.theme.colors.accentText};
+  background: ${props => props.$danger ? props.theme.colors.danger : props.theme.colors.accentGradient};
   font-weight: 800;
 `
 
 const Message = styled.p<{ $error?: boolean }>`
   margin-top: 12px;
-  color: ${props => props.$error ? '#ff7b7b' : '#65e98f'};
+  color: ${props => props.$error ? props.theme.colors.danger : props.theme.colors.success};
 `
 
 const SettingsGrid = styled.div`display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px;@media(max-width:640px){grid-template-columns:1fr;}`
-const Setting = styled.label`display:grid;gap:7px;color:#ddd;font-size:14px;select,input{padding:11px 12px;border:1px solid #454545;border-radius:8px;color:#fff;background:#242424;}`
-const CheckSetting = styled.label`display:flex;align-items:center;gap:10px;margin:16px 0;color:#ddd;input{accent-color:#1ed760;}`
+const Setting = styled.label`display:grid;gap:7px;color:${props => props.theme.colors.muted};font-size:14px;select,input{padding:11px 12px;border:1px solid ${props => props.theme.colors.border};border-radius:8px;color:${props => props.theme.colors.text};background:${props => props.theme.colors.surface};}`
+const CheckSetting = styled.label`display:flex;align-items:center;gap:10px;margin:16px 0;color:${props => props.theme.colors.muted};input{accent-color:${props => props.theme.colors.accent};}`
 const SessionList = styled.div`display:grid;gap:9px;margin:16px 0;`
-const SessionRow = styled.div`display:flex;justify-content:space-between;align-items:center;gap:15px;padding:13px;border:1px solid #333;border-radius:9px;background:#202020;div{display:grid;gap:4px;}small{color:#999;}`
-const SecondaryButton = styled(Button)`color:#fff;background:transparent;border:1px solid #555;`
+const SessionRow = styled.div`display:flex;justify-content:space-between;align-items:center;gap:15px;padding:13px;border:1px solid ${props => props.theme.colors.border};border-radius:9px;background:${props => props.theme.colors.surface};div{display:grid;gap:4px;}small{color:${props => props.theme.colors.subtle};}`
+const SecondaryButton = styled(Button)`color:${props => props.theme.colors.text};background:transparent;border:1px solid ${props => props.theme.colors.borderStrong};`
+const HelpText = styled.p`color:${props => props.theme.colors.muted};font-size:14px;line-height:1.5;`
+const ButtonRow = styled.div`display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:18px;`
+const ServiceSection = styled.div`
+  display: grid;
+  gap: 14px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid ${({ theme }) => theme.colors.border};
+
+  &:first-of-type {
+    margin-top: 18px;
+  }
+`
+const ServiceHeader = styled.div`
+  display: grid;
+  gap: 4px;
+
+  h3 {
+    margin: 0;
+    color: ${({ theme }) => theme.colors.text};
+    font-size: 17px;
+  }
+
+  p {
+    margin: 0;
+    color: ${({ theme }) => theme.colors.muted};
+    font-size: 13px;
+    line-height: 1.45;
+  }
+`
 
 export default function Account() {
   const { user, logout } = useAuth()
+  const { themeName, setThemeName } = useAppTheme()
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -82,14 +116,37 @@ export default function Account() {
   const [sessions, setSessions] = useState<UserSession[]>([])
   const [currentSessionID, setCurrentSessionID] = useState('')
   const [profileSaving, setProfileSaving] = useState(false)
+  const [scrobbleSaving, setScrobbleSaving] = useState(false)
+  const [scrobbleLoaded, setScrobbleLoaded] = useState(false)
+  const [lastFMStatus, setLastFMStatus] = useState('')
+  const [listenBrainzUser, setListenBrainzUser] = useState('')
+  const [listenBrainzUserSaving, setListenBrainzUserSaving] = useState(false)
+  const [listenBrainzUserStatus, setListenBrainzUserStatus] = useState('')
+  const scrobbleSaveTimer = useRef<number | null>(null)
+  const [scrobbleSettings, setScrobbleSettings] = useState<ScrobbleSettings>({
+    listenbrainz_enabled: false,
+    has_listenbrainz_token: false,
+    listenbrainz_token: '',
+    lastfm_enabled: false,
+    lastfm_server_configured: false,
+    lastfm_username: '',
+    has_lastfm_session_key: false,
+    has_lastfm_pending_token: false,
+  })
 
   const loadAccountSettings = async () => {
-    const [loadedProfile, sessionData] = await Promise.all([
-      accountAPI.getPlaybackProfile(), accountAPI.getSessions(),
+    const [loadedProfile, sessionData, loadedScrobbleSettings, discoverySettings] = await Promise.all([
+      accountAPI.getPlaybackProfile(), accountAPI.getSessions(), accountAPI.getScrobbleSettings(), discoveryAPI.getSettings(),
     ])
     setProfile(loadedProfile)
     setSessions(sessionData.sessions)
     setCurrentSessionID(sessionData.current_session_id)
+    setListenBrainzUser(discoverySettings.listenbrainz_user || '')
+    setScrobbleSettings({
+      ...loadedScrobbleSettings,
+      listenbrainz_token: '',
+    })
+    setScrobbleLoaded(true)
   }
 
   useEffect(() => { void loadAccountSettings() }, [])
@@ -104,6 +161,152 @@ export default function Account() {
       setError('Playback settings could not be saved.')
     } finally {
       setProfileSaving(false)
+    }
+  }
+
+  const saveListenBrainzUser = async () => {
+    setListenBrainzUserSaving(true)
+    setListenBrainzUserStatus('')
+    setError('')
+    try {
+      const saved = await discoveryAPI.saveSettings({ listenbrainz_user: listenBrainzUser.trim() })
+      setListenBrainzUser(saved.listenbrainz_user || '')
+      setListenBrainzUserStatus('ListenBrainz username saved.')
+    } catch (requestError: unknown) {
+      const responseError = requestError as { response?: { data?: { error?: string } }; message?: string }
+      setError(responseError.response?.data?.error || responseError.message || 'ListenBrainz username could not be saved.')
+    } finally {
+      setListenBrainzUserSaving(false)
+    }
+  }
+
+  const listenBrainzEnabled = scrobbleSettings.listenbrainz_enabled
+  const listenBrainzToken = scrobbleSettings.listenbrainz_token
+  const hasListenBrainzToken = scrobbleSettings.has_listenbrainz_token
+  const lastFMEnabled = scrobbleSettings.lastfm_enabled
+  const lastFMServerConfigured = scrobbleSettings.lastfm_server_configured
+  const lastFMUsername = scrobbleSettings.lastfm_username
+  const hasLastFMSessionKey = scrobbleSettings.has_lastfm_session_key
+  const hasLastFMPendingToken = scrobbleSettings.has_lastfm_pending_token
+
+  const completeLastFMConnection = useCallback(async () => {
+    setScrobbleSaving(true)
+    setError('')
+    try {
+      const saved = await accountAPI.completeLastFMAuth()
+      setScrobbleSettings({
+        ...saved,
+        listenbrainz_token: '',
+      })
+      setLastFMStatus(saved.lastfm_username ? `Last.fm is connected as ${saved.lastfm_username}.` : 'Last.fm is connected.')
+    } catch (requestError: unknown) {
+      const responseError = requestError as { response?: { data?: { error?: string } }; message?: string }
+      setLastFMStatus(responseError.response?.data?.error || responseError.message || 'Last.fm has not approved the connection yet.')
+    } finally {
+      setScrobbleSaving(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (scrobbleLoaded && hasLastFMPendingToken && !hasLastFMSessionKey) {
+      setLastFMStatus('Approve WaveNode on Last.fm, then click “I’ve approved”.')
+    }
+  }, [hasLastFMPendingToken, hasLastFMSessionKey, scrobbleLoaded])
+
+  useEffect(() => {
+    if (!scrobbleLoaded) return
+    if (scrobbleSaveTimer.current) {
+      window.clearTimeout(scrobbleSaveTimer.current)
+    }
+
+    scrobbleSaveTimer.current = window.setTimeout(() => {
+      const settingsToSave: ScrobbleSettings = {
+        listenbrainz_enabled: listenBrainzEnabled,
+        has_listenbrainz_token: hasListenBrainzToken,
+        listenbrainz_token: listenBrainzToken,
+        lastfm_enabled: lastFMEnabled,
+        lastfm_server_configured: lastFMServerConfigured,
+        lastfm_username: lastFMUsername,
+        has_lastfm_session_key: hasLastFMSessionKey,
+        has_lastfm_pending_token: hasLastFMPendingToken,
+      }
+
+      setScrobbleSaving(true)
+      setError('')
+      void accountAPI.saveScrobbleSettings(settingsToSave)
+        .then(saved => {
+          setScrobbleSettings(current => ({
+            ...current,
+            ...saved,
+            listenbrainz_token: '',
+          }))
+        })
+        .catch((requestError: unknown) => {
+          const responseError = requestError as { response?: { data?: { error?: string } } }
+          setError(responseError.response?.data?.error || 'Scrobbling settings could not be saved.')
+        })
+        .finally(() => setScrobbleSaving(false))
+    }, 650)
+
+    return () => {
+      if (scrobbleSaveTimer.current) {
+        window.clearTimeout(scrobbleSaveTimer.current)
+      }
+    }
+  }, [
+    scrobbleLoaded,
+    listenBrainzEnabled,
+    listenBrainzToken,
+    hasListenBrainzToken,
+    lastFMEnabled,
+    lastFMServerConfigured,
+    lastFMUsername,
+    hasLastFMSessionKey,
+    hasLastFMPendingToken,
+  ])
+
+  const startLastFMConnection = async () => {
+    setScrobbleSaving(true)
+    setError('')
+    setMessage('')
+    try {
+      const result = await accountAPI.startLastFMAuth()
+      const refreshed = await accountAPI.getScrobbleSettings()
+      setScrobbleSettings(current => ({
+        ...current,
+        ...refreshed,
+      }))
+      setLastFMStatus('Approve WaveNode in the Last.fm tab, then return here and click “I’ve approved”.')
+      const authWindow = window.open(result.auth_url, '_blank', 'noopener,noreferrer')
+      if (!authWindow) {
+        setLastFMStatus('Your browser blocked the Last.fm tab. Allow popups for WaveNode, then restart the connection.')
+        return
+      }
+    } catch (requestError: unknown) {
+      const responseError = requestError as { response?: { data?: { error?: string } }; message?: string }
+      setError(responseError.response?.data?.error || responseError.message || 'Last.fm connection could not be started.')
+    } finally {
+      setScrobbleSaving(false)
+    }
+  }
+
+  const disconnectLastFMConnection = async () => {
+    if (!window.confirm('Disconnect Last.fm from this account?')) return
+    setScrobbleSaving(true)
+    setError('')
+    setMessage('')
+    try {
+      const saved = await accountAPI.disconnectLastFM()
+      setScrobbleSettings({
+        ...saved,
+        listenbrainz_token: '',
+      })
+      setLastFMStatus('Disconnected')
+    } catch (requestError: unknown) {
+      const responseError = requestError as { response?: { data?: { error?: string } }; message?: string }
+      setError(responseError.response?.data?.error || responseError.message || 'Last.fm could not be disconnected.')
+    } finally {
+      setScrobbleSaving(false)
     }
   }
 
@@ -157,6 +360,23 @@ export default function Account() {
       </Card>
 
       <Card>
+        <h2><Palette size={20} /> Appearance</h2>
+        <p>Choose how WaveNode looks on this device.</p>
+        <SettingsGrid>
+          <Setting>Theme
+            <select value={themeName} onChange={event => setThemeName(event.target.value as AppThemeName)}>
+              {Object.values(appThemes).map(theme => (
+                <option key={theme.name} value={theme.name}>{theme.label}</option>
+              ))}
+            </select>
+          </Setting>
+          <Setting>Style
+            <input readOnly value={appThemes[themeName].description} />
+          </Setting>
+        </SettingsGrid>
+      </Card>
+
+      <Card>
         <h2><KeyRound size={20} /> Change password</h2>
         <Form onSubmit={changePassword}>
           <label>
@@ -202,6 +422,77 @@ export default function Account() {
         </SettingsGrid>
         <CheckSetting><input type="checkbox" checked={profile.transcode_enabled} onChange={event => setProfile(current => ({ ...current, transcode_enabled: event.target.checked }))} />Always transcode web playback using this profile</CheckSetting>
         <Button type="button" onClick={() => void saveProfile()} disabled={profileSaving}>{profileSaving ? <RefreshCw size={16} /> : <Headphones size={16} />} Save playback settings</Button>
+      </Card>
+
+      <Card>
+        <h2><Radio size={20} /> Scrobbling</h2>
+        <HelpText>Send listening activity to ListenBrainz and Last.fm. Changes save automatically.</HelpText>
+        <ServiceSection>
+          <ServiceHeader>
+            <h3>ListenBrainz</h3>
+            <p>Used for ListenBrainz scrobbling and recommendation imports.</p>
+          </ServiceHeader>
+          <CheckSetting>
+            <input
+              type="checkbox"
+              checked={scrobbleSettings.listenbrainz_enabled}
+              onChange={event => setScrobbleSettings(current => ({ ...current, listenbrainz_enabled: event.target.checked }))}
+            />
+            Enable ListenBrainz scrobbling
+          </CheckSetting>
+          <Setting>ListenBrainz username
+            <input
+              placeholder="Your ListenBrainz profile name"
+              value={listenBrainzUser}
+              onChange={event => setListenBrainzUser(event.target.value)}
+            />
+          </Setting>
+          <ButtonRow>
+            <SecondaryButton type="button" onClick={() => void saveListenBrainzUser()} disabled={listenBrainzUserSaving}>
+              {listenBrainzUserSaving ? 'Saving...' : 'Save ListenBrainz username'}
+            </SecondaryButton>
+            {listenBrainzUserStatus && <HelpText>{listenBrainzUserStatus}</HelpText>}
+          </ButtonRow>
+          <Setting>ListenBrainz user token
+            <input
+              type="password"
+              placeholder={scrobbleSettings.has_listenbrainz_token ? 'Saved. Leave blank to keep existing token.' : 'Paste ListenBrainz token'}
+              value={scrobbleSettings.listenbrainz_token || ''}
+              onChange={event => setScrobbleSettings(current => ({ ...current, listenbrainz_token: event.target.value }))}
+            />
+          </Setting>
+        </ServiceSection>
+
+        <ServiceSection>
+          <ServiceHeader>
+            <h3>Last.fm</h3>
+            <p>Connect your Last.fm account to send now-playing updates and scrobbles.</p>
+          </ServiceHeader>
+          {!scrobbleSettings.lastfm_server_configured && (
+            <HelpText>Last.fm is not configured by an administrator yet.</HelpText>
+          )}
+          <ButtonRow>
+            {scrobbleSettings.has_lastfm_session_key ? (
+              <Button $danger type="button" onClick={() => void disconnectLastFMConnection()} disabled={scrobbleSaving}>Disconnect Last.fm</Button>
+            ) : scrobbleSettings.has_lastfm_pending_token ? (
+              <>
+                <Button type="button" onClick={() => void completeLastFMConnection()} disabled={scrobbleSaving}>I’ve approved</Button>
+                <SecondaryButton type="button" onClick={() => void startLastFMConnection()} disabled={scrobbleSaving || !scrobbleSettings.lastfm_server_configured}>Open Last.fm</SecondaryButton>
+              </>
+            ) : (
+              <Button type="button" onClick={() => void startLastFMConnection()} disabled={scrobbleSaving || !scrobbleSettings.lastfm_server_configured}>Connect Last.fm</Button>
+            )}
+            <HelpText>
+              {scrobbleSaving
+                ? 'Saving...'
+                : lastFMStatus || (scrobbleSettings.has_lastfm_session_key
+                  ? `Last.fm is connected${scrobbleSettings.lastfm_username ? ` as ${scrobbleSettings.lastfm_username}` : ''}.`
+                  : scrobbleSettings.has_lastfm_pending_token
+                    ? 'Approve WaveNode on Last.fm, then click “I’ve approved”.'
+                  : '')}
+            </HelpText>
+          </ButtonRow>
+        </ServiceSection>
       </Card>
 
       <Card>

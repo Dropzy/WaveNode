@@ -385,7 +385,7 @@ const formatDateAdded = (dateString: string): string => {
 
 export const LikedSongs: React.FC = () => {
   const { isAuthenticated } = useAuth()
-  const { playTrack, addToQueue } = useAudio()
+  const { playFromQueue, addToQueue } = useAudio()
   const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
   const [likedTracks, setLikedTracks] = useState<Track[]>([])
@@ -451,7 +451,8 @@ export const LikedSongs: React.FC = () => {
       e.stopPropagation()
     }
     try {
-      await playTrack(track)
+      const index = filteredLikedTracks.findIndex(item => item.id === track.id)
+      playFromQueue(filteredLikedTracks, index === -1 ? 0 : index)
     } catch (err) {
       console.error('Failed to play track:', err)
     }

@@ -742,6 +742,9 @@ func (r *Router) subsonicScrobble(user *database.User, ids []string) *subsonicEr
 			return internalSubsonicError(err)
 		}
 		_ = r.db.IncrementPlayCount(id)
+		if track, err := r.db.GetMusic(id); err == nil {
+			go r.submitScrobble(user.ID, *track, "listened", time.Now())
+		}
 	}
 	return nil
 }
