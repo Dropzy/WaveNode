@@ -50,7 +50,7 @@ Edit `.env` and set:
 Start WaveNode:
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
 Open `http://localhost:8080`. The first-run wizard creates the administrator and asks for:
@@ -58,7 +58,7 @@ Open `http://localhost:8080`. The first-run wizard creates the administrator and
 - Music folder: choose `/music`
 - Artwork folder: choose `/data/artwork`
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for HTTPS, upgrades, backup, and restore instructions.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for HTTPS, one-click Docker updates, backup, and restore instructions.
 See [SUBSONIC.md](SUBSONIC.md) for compatible client setup and supported endpoints.
 See [PLUGINS.md](PLUGINS.md) for the plugin manifest format and extension points.
 See [SMART_PLAYLISTS.md](SMART_PLAYLISTS.md) for rule groups and relative-date examples.

@@ -162,6 +162,23 @@ export interface DiscoveryImportResult {
   preview: DiscoveryPreview
 }
 
+export interface UpdateStatus {
+  current_version: string
+  latest_version: string
+  update_available: boolean
+  release_url: string
+  release_notes: string
+  checked_at?: string
+  enabled: boolean
+  command_configured: boolean
+  repository: string
+  state: 'idle' | 'checking' | 'ready' | 'running' | 'completed' | 'failed' | 'unavailable'
+  message: string
+  started_at?: string
+  finished_at?: string
+  log_tail: string[]
+}
+
 export interface SmartPlaylistCondition {
   field: 'title' | 'artist' | 'album' | 'genre' | 'year' | 'duration' | 'play_count' | 'rating' | 'date_added' | 'liked' | 'has_artwork'
   operator: string
@@ -860,6 +877,27 @@ export const adminIntegrationsAPI = {
   saveLastFM: async (settings: LastFMIntegrationSettings): Promise<LastFMIntegrationSettings> => {
     const response = await api.put<APIResponse<LastFMIntegrationSettings>>('/admin/integrations/lastfm', settings)
     return response.data.data || settings
+  },
+}
+
+export const adminUpdateAPI = {
+  getStatus: async (): Promise<UpdateStatus | null> => {
+    const response = await api.get<APIResponse<UpdateStatus>>('/admin/system/update')
+    return response.data.data || null
+  },
+  check: async (): Promise<UpdateStatus> => {
+    const response = await api.post<APIResponse<UpdateStatus>>('/admin/system/update/check')
+    if (!response.data.data) {
+      throw new Error(response.data.error || 'Update check did not return a status')
+    }
+    return response.data.data
+  },
+  run: async (): Promise<UpdateStatus> => {
+    const response = await api.post<APIResponse<UpdateStatus>>('/admin/system/update/run')
+    if (!response.data.data) {
+      throw new Error(response.data.error || 'Update did not return a status')
+    }
+    return response.data.data
   },
 }
 

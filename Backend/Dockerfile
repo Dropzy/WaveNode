@@ -28,7 +28,7 @@ FROM alpine:3.22
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="WaveNode" \
       org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.source="https://github.com/wavenode/wavenode"
+      org.opencontainers.image.source="https://github.com/Dropzy/WaveNode"
 
 RUN apk add --no-cache ca-certificates ffmpeg tzdata \
     && addgroup -S -g 10001 wavenode \

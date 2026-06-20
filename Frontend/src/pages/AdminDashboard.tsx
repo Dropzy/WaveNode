@@ -35,7 +35,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { adminArtistImagesAPI, adminIntegrationsAPI, api, ArtistImage, PluginRecord, type LastFMIntegrationSettings, User } from '../services/api'
+import { adminArtistImagesAPI, adminIntegrationsAPI, adminUpdateAPI, api, ArtistImage, PluginRecord, type LastFMIntegrationSettings, type UpdateStatus, User } from '../services/api'
 import websocketService, { ScanStatus as WebSocketScanStatus } from '../services/websocket'
 import { getArtworkGradient, resolveMediaUrl } from '../utils/mediaUrl'
 
@@ -711,6 +711,21 @@ const IssuePath = styled.div`
   overflow-wrap: anywhere;
 `
 
+const LogPanel = styled.div`
+  margin: 16px 0 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 10px;
+  background: ${({ theme }) => theme.colors.backgroundElevated};
+  color: ${({ theme }) => theme.colors.muted};
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+`
+
 const ArtistImageList = styled.div`
   display: grid;
   gap: 10px;
@@ -1215,6 +1230,8 @@ const AdminDashboard: React.FC = () => {
     configured: false,
   })
   const [savingLastFMIntegration, setSavingLastFMIntegration] = useState(false)
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
+  const [updateAction, setUpdateAction] = useState<'check' | 'run' | null>(null)
 
   const runningScan = useMemo(
     () => scans.find(scan => scan.status === 'running' || scan.status === 'pending' || scan.status === 'stopping'),
@@ -1247,6 +1264,7 @@ const AdminDashboard: React.FC = () => {
         diagnosticsResponse,
         pluginsResponse,
         lastFMIntegrationResponse,
+        updateStatusResponse,
       ] = await Promise.all([
         api.get('/admin/stats'),
         api.get('/admin/users'),
@@ -1258,6 +1276,7 @@ const AdminDashboard: React.FC = () => {
         includeDiagnostics ? api.get('/admin/library/diagnostics') : Promise.resolve(null),
         api.get('/admin/plugins'),
         adminIntegrationsAPI.getLastFM(),
+        adminUpdateAPI.getStatus(),
       ])
 
       setStats(statsResponse.data?.data || null)
@@ -1275,6 +1294,7 @@ const AdminDashboard: React.FC = () => {
         ...lastFMIntegrationResponse,
         shared_secret: '',
       })
+      setUpdateStatus(updateStatusResponse)
       setLastUpdated(new Date())
       setError(null)
     } catch (requestError) {
@@ -1358,6 +1378,38 @@ const AdminDashboard: React.FC = () => {
     }
   }
 
+  const checkForUpdate = async () => {
+    try {
+      setUpdateAction('check')
+      setError(null)
+      const status = await adminUpdateAPI.check()
+      setUpdateStatus(status)
+      setSuccess(status.update_available ? `WaveNode ${status.latest_version} is available.` : 'WaveNode is up to date.')
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, 'Could not check for updates'))
+    } finally {
+      setUpdateAction(null)
+    }
+  }
+
+  const runUpdate = async () => {
+    if (!window.confirm('Update WaveNode now? The server may restart while the update is applied.')) {
+      return
+    }
+
+    try {
+      setUpdateAction('run')
+      setError(null)
+      const status = await adminUpdateAPI.run()
+      setUpdateStatus(status)
+      setSuccess('WaveNode update started. This page may disconnect while the server restarts.')
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, 'Could not start the update'))
+    } finally {
+      setUpdateAction(null)
+    }
+  }
+
   useEffect(() => {
     if (user?.role === 'admin') {
       void loadDashboard()
@@ -1369,6 +1421,18 @@ const AdminDashboard: React.FC = () => {
     const interval = window.setInterval(() => void loadDashboard(true, false), 2000)
     return () => window.clearInterval(interval)
   }, [loadDashboard, runningScan])
+
+  useEffect(() => {
+    if (updateStatus?.state !== 'running' && updateStatus?.state !== 'checking') return
+    const interval = window.setInterval(async () => {
+      try {
+        setUpdateStatus(await adminUpdateAPI.getStatus())
+      } catch {
+        // The server may briefly restart while applying an update.
+      }
+    }, 2500)
+    return () => window.clearInterval(interval)
+  }, [updateStatus?.state])
 
   useEffect(() => {
     if (user?.role !== 'admin') return
@@ -2490,6 +2554,87 @@ const AdminDashboard: React.FC = () => {
               </StatCard>
             ))}
           </StatsGrid>
+
+          <Panel>
+            <PanelHeader>
+              <div>
+                <PanelTitle>WaveNode updates</PanelTitle>
+                <PanelDescription>Check GitHub releases and apply server updates from this dashboard.</PanelDescription>
+              </div>
+              <ButtonRow>
+                <Button onClick={() => void checkForUpdate()} disabled={updateAction !== null || updateStatus?.state === 'running' || updateStatus?.state === 'checking'}>
+                  <RefreshCw size={15} /> {updateAction === 'check' ? 'Checking...' : 'Check for updates'}
+                </Button>
+                <Button
+                  $variant="primary"
+                  onClick={() => void runUpdate()}
+                  disabled={
+                    updateAction !== null ||
+                    updateStatus?.state === 'running' ||
+                    updateStatus?.state === 'checking' ||
+                    !updateStatus?.command_configured ||
+                    !updateStatus?.update_available
+                  }
+                >
+                  <RefreshCw size={15} /> {updateStatus?.state === 'running' || updateAction === 'run' ? 'Updating...' : 'Update now'}
+                </Button>
+              </ButtonRow>
+            </PanelHeader>
+            <PanelBody>
+              <SourceList>
+                <SourceRow>
+                  <span>Installed version</span>
+                  <PrimaryText>{updateStatus?.current_version ? `v${updateStatus.current_version.replace(/^v/i, '')}` : systemStatus ? `v${systemStatus.version}` : '-'}</PrimaryText>
+                </SourceRow>
+                <SourceRow>
+                  <span>Latest release</span>
+                  <PrimaryText>
+                    {updateStatus?.latest_version || 'Not checked yet'}
+                    {updateStatus?.release_url && (
+                      <>
+                        {' '}
+                        <a href={updateStatus.release_url} target="_blank" rel="noreferrer">View release</a>
+                      </>
+                    )}
+                  </PrimaryText>
+                </SourceRow>
+                <SourceRow>
+                  <span>Update status</span>
+                  <StatusBadge $status={
+                    updateStatus?.state === 'failed' || updateStatus?.state === 'unavailable'
+                      ? 'failed'
+                      : updateStatus?.state === 'running' || updateStatus?.state === 'checking'
+                        ? 'running'
+                        : 'completed'
+                  }>
+                    {updateStatus?.state === 'failed' || updateStatus?.state === 'unavailable'
+                      ? <AlertTriangle size={14} />
+                      : updateStatus?.state === 'running' || updateStatus?.state === 'checking'
+                        ? <Clock3 size={14} />
+                        : <CheckCircle2 size={14} />}
+                    {updateStatus?.message || 'Update status unavailable'}
+                  </StatusBadge>
+                </SourceRow>
+                <SourceRow>
+                  <span>One-click update</span>
+                  <PrimaryText>{updateStatus?.command_configured ? 'Configured' : 'Not configured'}</PrimaryText>
+                </SourceRow>
+              </SourceList>
+              {!updateStatus?.command_configured && (
+                <SourceHelp style={{ marginTop: 14, marginBottom: 0 }}>
+                  Set <code>WAVENODE_UPDATE_COMMAND</code> on the server to enable the Update now button.
+                  The command runs server-side and should pull the latest release, rebuild or pull containers, and restart WaveNode.
+                </SourceHelp>
+              )}
+              {updateStatus?.log_tail?.length ? (
+                <LogPanel aria-label="Latest update log">
+                  {updateStatus.log_tail.map((line, index) => (
+                    <div key={`${index}-${line}`}>{line}</div>
+                  ))}
+                </LogPanel>
+              ) : null}
+            </PanelBody>
+          </Panel>
 
           <Panel>
             <PanelHeader>

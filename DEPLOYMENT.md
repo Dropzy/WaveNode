@@ -5,7 +5,7 @@
 1. Copy `.env.example` to `.env`.
 2. Set strong values for `POSTGRES_PASSWORD` and `JWT_SECRET`.
 3. Set `MUSIC_PATH` to an absolute folder on the Docker host.
-4. Run `docker compose up -d --build`.
+4. Run `docker compose up -d`.
 5. Open `http://server-address:8080`.
 6. In first-run setup, select `/music` and `/data/artwork`.
 
@@ -36,7 +36,7 @@ Use a randomly generated setup code of at least 16 characters. This prevents an 
 Start the internet deployment:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.internet.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.internet.yml up -d
 ```
 
 Open `https://music.example.com`. Caddy obtains and renews the certificate automatically. Enter `SETUP_TOKEN` when the first-run wizard requests the setup access code.
@@ -75,15 +75,55 @@ Restart the backend after changing it:
 docker compose up -d
 ```
 
+## Development Builds
+
+The default Compose file uses published GHCR images. Contributors who want to build from the local source tree should use the development override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
+
 ## Upgrade
 
 Download a backup from **Admin Dashboard > Library jobs > Backup and restore** before upgrading. It contains WaveNode accounts, playlists, settings, indexed data, listening history, and stored artwork. Original audio files remain separate.
 
-Then run:
+WaveNode can check GitHub releases from **Admin Dashboard > System > WaveNode updates**. The **Update now** button is disabled until the server owner configures a trusted server-side update command.
+
+The default Docker stack keeps the main app container restricted. That is deliberate. One-click Docker updates are handled by an optional updater sidecar. Only the updater sidecar receives Docker socket access; the web app and API do not.
+
+To enable one-click Docker updates, add these values to `.env`:
+
+```env
+WAVENODE_UPDATE_REPOSITORY=Dropzy/WaveNode
+WAVENODE_UPDATER_URL=http://updater:8090
+WAVENODE_UPDATER_TOKEN=replace-with-a-long-random-token
+WAVENODE_UPDATE_TIMEOUT_SECONDS=900
+COMPOSE_PROFILES=updater
+```
+
+Then recreate the stack:
+
+```bash
+docker compose up -d
+```
+
+For the internet deployment, use the same `.env` values and run:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.internet.yml up -d
+```
+
+The updater sidecar runs `docker compose pull` and `docker compose up -d` for the WaveNode backend and frontend services. It uses the same `.env` and Compose file mounted read-only from the host. Only administrators can trigger updates from the dashboard.
+
+Do not expose the updater port publicly. It should only be reachable on the private Docker network.
+
+Native/source-checkout deployments can still use `WAVENODE_UPDATE_COMMAND` instead of the updater sidecar, but Docker installs should prefer the sidecar.
+
+Manual upgrade remains:
 
 ```bash
 docker compose pull
-docker compose up -d --build
+docker compose up -d
 ```
 
 Database migrations run when the backend starts. Check status with:

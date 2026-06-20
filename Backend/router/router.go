@@ -44,6 +44,7 @@ type Router struct {
 	db                *database.DB
 	scanStore         *database.ScanStore
 	autoUpdater       *scanner.AutoUpdater
+	updateManager     *UpdateManager
 	setupToken        string
 	subsonicAuthCache sync.Map
 	playbackHandoffs  sync.Map
@@ -81,6 +82,7 @@ func NewRouter(
 		setupToken:        strings.TrimSpace(setupToken),
 		scanStore:         scanStore,
 		corsConfig:        corsConfig,
+		updateManager:     NewUpdateManager(WaveNodeVersion),
 	}
 	router.startArtistMetadataRefreshLoop()
 	return router
@@ -228,6 +230,9 @@ func (r *Router) SetupRoutes() *mux.Router {
 	admin.HandleFunc("/backup", r.downloadBackup).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/restore", r.restoreBackup).Methods("POST", "OPTIONS")
 	admin.HandleFunc("/system/status", r.getSystemStatus).Methods("GET", "OPTIONS")
+	admin.HandleFunc("/system/update", r.getUpdateStatus).Methods("GET", "OPTIONS")
+	admin.HandleFunc("/system/update/check", r.checkForUpdate).Methods("POST", "OPTIONS")
+	admin.HandleFunc("/system/update/run", r.runUpdate).Methods("POST", "OPTIONS")
 	admin.HandleFunc("/library/diagnostics", r.getLibraryDiagnostics).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/library", r.clearLibrary).Methods("DELETE", "OPTIONS")
 	admin.HandleFunc("/integrations/lastfm", r.getAdminLastFMIntegration).Methods("GET", "OPTIONS")
