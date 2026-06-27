@@ -63,6 +63,8 @@ class MainActivity : ComponentActivity() {
                     onOpenAlbum = viewModel::openAlbum,
                     onOpenArtist = viewModel::openArtist,
                     onOpenPlaylist = viewModel::openPlaylist,
+                    onPodcastQueryChange = viewModel::updatePodcastSearch,
+                    onOpenPodcast = viewModel::openPodcast,
                     onCloseDetail = viewModel::closeDetail,
                     onTogglePlayPause = viewModel::togglePlayPause,
                     onToggleShuffle = viewModel::toggleShuffle,

@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,6 +15,10 @@ import org.wavenode.player.data.Album
 import org.wavenode.player.data.Artist
 import org.wavenode.player.data.DiscoveredServer
 import org.wavenode.player.data.Playlist
+import org.wavenode.player.data.Podcast
+import org.wavenode.player.data.PodcastEpisode
+import org.wavenode.player.data.PodcastHomeResponse
+import org.wavenode.player.data.PodcastProgress
 import org.wavenode.player.data.PluginHomeRow
 import org.wavenode.player.data.SavedSession
 import org.wavenode.player.data.ServerDiscovery
@@ -33,6 +38,13 @@ data class AppState(
     val artists: List<Artist> = emptyList(),
     val playlists: List<Playlist> = emptyList(),
     val pluginRows: List<PluginHomeRow> = emptyList(),
+    val podcastQuery: String = "",
+    val podcasts: List<Podcast> = emptyList(),
+    val isLoadingPodcasts: Boolean = false,
+    val podcastError: String? = null,
+    val podcastHome: PodcastHomeResponse = PodcastHomeResponse(),
+    val isLoadingPodcastHome: Boolean = false,
+    val podcastHomeError: String? = null,
     val discoveredServers: List<DiscoveredServer> = emptyList(),
     val connectSessions: List<UserSession> = emptyList(),
     val currentSessionId: String = "",
@@ -52,6 +64,7 @@ sealed interface LibraryDetail {
     data class AlbumPage(val album: Album, val tracks: List<Track>) : LibraryDetail
     data class ArtistPage(val artist: Artist, val tracks: List<Track>, val albums: List<Album>) : LibraryDetail
     data class PlaylistPage(val playlist: Playlist, val tracks: List<Track>) : LibraryDetail
+    data class PodcastPage(val podcast: Podcast, val episodes: List<PodcastEpisode>) : LibraryDetail
 }
 
 class WaveNodeViewModel(application: Application) : AndroidViewModel(application) {
@@ -65,10 +78,15 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
     val playerState: StateFlow<PlayerState> = player.state
     private var lastRecordedTrackId: String? = null
     private var appVisible = false
+    private var podcastSearchJob: Job? = null
+    private var lastPodcastSnapshot: PlayerState? = null
+    private var lastPodcastReportKey = ""
+    private var lastPodcastReportPosition = -1
 
     init {
         if (_state.value.session != null) {
             refreshTracks()
+            refreshPodcastHome()
         } else {
             discoverServers()
         }
@@ -76,6 +94,16 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
             playerState.collect { state ->
                 if (state.isPlaying) {
                     state.currentTrack?.let(::recordPlay)
+                }
+                val previous = lastPodcastSnapshot
+                if (previous?.currentTrack?.externalKind == "podcast" && previous.currentTrack?.id != state.currentTrack?.id) {
+                    reportPodcastProgress(previous, force = true)
+                }
+                if (state.currentTrack?.externalKind == "podcast") {
+                    lastPodcastSnapshot = state
+                    reportPodcastProgress(state, force = !state.isPlaying)
+                } else {
+                    lastPodcastSnapshot = null
                 }
             }
         }
@@ -117,6 +145,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                     sessionStore.save(session)
                     _state.value = AppState(session = session, isLoading = true)
                     refreshTracks()
+                    refreshPodcastHome()
                 }
                 .onFailure { error ->
                     _state.value = _state.value.copy(isLoading = false, error = error.message ?: "Login failed")
@@ -238,6 +267,88 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                     _state.value = _state.value.copy(
                         isDetailLoading = false,
                         detailError = error.message ?: "Could not load playlist",
+                    )
+                }
+        }
+    }
+
+    fun updatePodcastSearch(query: String) {
+        val session = _state.value.session ?: return
+        podcastSearchJob?.cancel()
+        _state.value = _state.value.copy(
+            podcastQuery = query,
+            podcasts = if (query.isBlank()) emptyList() else _state.value.podcasts,
+            isLoadingPodcasts = false,
+            podcastError = null,
+        )
+        if (query.isBlank()) {
+            return
+        }
+        podcastSearchJob = viewModelScope.launch {
+            delay(350)
+            _state.value = _state.value.copy(isLoadingPodcasts = true)
+            runCatching { api.searchPodcasts(session, query.trim()) }
+                .onSuccess { response ->
+                    if (_state.value.podcastQuery == query) {
+                        _state.value = _state.value.copy(
+                            podcasts = response.results,
+                            isLoadingPodcasts = false,
+                            podcastError = null,
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    if (_state.value.podcastQuery == query) {
+                        _state.value = _state.value.copy(
+                            podcasts = emptyList(),
+                            isLoadingPodcasts = false,
+                            podcastError = error.message ?: "Could not search podcasts",
+                        )
+                    }
+                }
+        }
+    }
+
+    fun refreshPodcastHome() {
+        val session = _state.value.session ?: return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isLoadingPodcastHome = true, podcastHomeError = null)
+            runCatching { api.getPodcastHome(session) }
+                .onSuccess { home ->
+                    _state.value = _state.value.copy(
+                        podcastHome = home,
+                        isLoadingPodcastHome = false,
+                        podcastHomeError = null,
+                    )
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(
+                        isLoadingPodcastHome = false,
+                        podcastHomeError = error.message ?: "Could not load podcasts",
+                    )
+                }
+        }
+    }
+
+    fun openPodcast(podcast: Podcast) {
+        val session = _state.value.session ?: return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                activeDetail = LibraryDetail.PodcastPage(podcast, emptyList()),
+                isDetailLoading = true,
+                detailError = null,
+            )
+            runCatching { api.getPodcastEpisodes(session, podcast.id) }
+                .onSuccess { detail ->
+                    _state.value = _state.value.copy(
+                        activeDetail = LibraryDetail.PodcastPage(detail.podcast, detail.episodes),
+                        isDetailLoading = false,
+                    )
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(
+                        isDetailLoading = false,
+                        detailError = error.message ?: "Could not load podcast episodes",
                     )
                 }
         }
@@ -422,11 +533,21 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
         val session = _state.value.session ?: return
         val playableQueue = queue.ifEmpty { listOf(track) }
         val startIndex = playableQueue.indexOfFirst { it.id == track.id }.takeIf { it >= 0 } ?: 0
-        if (_state.value.connectedPlaybackSessionId.isNotBlank()) {
+        val isPodcastQueue = playableQueue.any { it.externalKind == "podcast" }
+        if (_state.value.connectedPlaybackSessionId.isNotBlank() && !isPodcastQueue) {
             sendRemoteQueue(playableQueue, startIndex)
             return
         }
-        player.playQueue(session, playableQueue, startIndex)
+        if (isPodcastQueue) {
+            _state.value = _state.value.copy(
+                connectedPlaybackSessionId = "",
+                connectedPlaybackDeviceName = "",
+                connectMessage = null,
+            )
+        }
+        val startPositionMs = track.takeIf { it.externalKind == "podcast" && !it.podcastCompleted }
+            ?.podcastProgressSeconds?.toLong()?.times(1000L) ?: 0L
+        player.playQueue(session, playableQueue, startIndex, startPositionMs)
         recordPlay(track)
         refreshRadioMetadata(track)
     }
@@ -435,9 +556,17 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
         val session = _state.value.session ?: return
         val queue = playerState.value.queue.ifEmpty { listOf(track) }
         val startIndex = queue.indexOfFirst { it.id == track.id }.takeIf { it >= 0 } ?: 0
-        if (_state.value.connectedPlaybackSessionId.isNotBlank()) {
+        val isPodcastQueue = queue.any { it.externalKind == "podcast" }
+        if (_state.value.connectedPlaybackSessionId.isNotBlank() && !isPodcastQueue) {
             sendRemoteQueue(queue, startIndex)
             return
+        }
+        if (isPodcastQueue) {
+            _state.value = _state.value.copy(
+                connectedPlaybackSessionId = "",
+                connectedPlaybackDeviceName = "",
+                connectMessage = null,
+            )
         }
         player.playQueue(session, queue, startIndex)
         recordPlay(track)
@@ -494,7 +623,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
 
     private fun refreshRadioMetadata(track: Track) {
         val session = _state.value.session ?: return
-        if (!track.isExternal || track.streamUrl.isBlank()) {
+        if (!track.isExternal || track.externalKind == "podcast" || track.streamUrl.isBlank()) {
             return
         }
         viewModelScope.launch {
@@ -544,6 +673,9 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setAppVisible(isVisible: Boolean) {
+        if (!isVisible) {
+            reportPodcastProgress(playerState.value, force = true)
+        }
         appVisible = isVisible
         player.setAppVisible(isVisible)
         if (isVisible) {
@@ -553,6 +685,69 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                 }
             }
         }
+    }
+
+    private fun reportPodcastProgress(playback: PlayerState, force: Boolean) {
+        val session = _state.value.session ?: return
+        val track = playback.currentTrack ?: return
+        if (track.externalKind != "podcast" || track.podcastId.isBlank() || track.podcastEpisodeId.isBlank() || track.streamUrl.isBlank()) return
+        val position = (playback.positionMs / 1000L).toInt().coerceAtLeast(0)
+        val duration = ((playback.durationMs.takeIf { it > 0L } ?: track.duration.toLong() * 1000L) / 1000L).toInt().coerceAtLeast(0)
+        val key = "${track.podcastId}:${track.podcastEpisodeId}"
+        if (!force && lastPodcastReportKey == key && kotlin.math.abs(position - lastPodcastReportPosition) < 10) return
+        if (lastPodcastReportKey == key && lastPodcastReportPosition == position) return
+        lastPodcastReportKey = key
+        lastPodcastReportPosition = position
+        viewModelScope.launch {
+            runCatching {
+                api.updatePodcastProgress(
+                    session,
+                    PodcastProgress(
+                        podcastId = track.podcastId,
+                        episodeId = track.podcastEpisodeId,
+                        podcastTitle = track.podcastTitle.ifBlank { track.album.ifBlank { "Podcast" } },
+                        publisher = track.podcastPublisher,
+                        episodeTitle = track.title,
+                        description = track.podcastDescription,
+                        imageUrl = track.imageUrl,
+                        audioUrl = track.streamUrl,
+                        websiteUrl = track.podcastWebsiteUrl,
+                        publishedAt = track.releaseDate,
+                        durationSeconds = duration,
+                        positionSeconds = position,
+                    ),
+                )
+            }.onSuccess(::applyPodcastProgress)
+                .onFailure { error ->
+                    lastPodcastReportKey = ""
+                    Log.w("WaveNode", "Could not save podcast progress", error)
+                }
+        }
+    }
+
+    private fun applyPodcastProgress(saved: PodcastProgress) {
+        val current = _state.value
+        val remaining = current.podcastHome.continueListening.filterNot {
+            it.podcastId == saved.podcastId && it.episodeId == saved.episodeId
+        }
+        val updatedContinue = if (saved.positionSeconds > 0 && !saved.completed) {
+            (listOf(saved) + remaining).take(12)
+        } else {
+            remaining
+        }
+        val detail = when (val active = current.activeDetail) {
+            is LibraryDetail.PodcastPage -> active.copy(episodes = active.episodes.map { episode ->
+                if (episode.id == saved.episodeId) episode.copy(
+                    progressSeconds = saved.positionSeconds,
+                    completed = saved.completed,
+                ) else episode
+            })
+            else -> active
+        }
+        _state.value = current.copy(
+            podcastHome = current.podcastHome.copy(continueListening = updatedContinue),
+            activeDetail = detail,
+        )
     }
 
     private suspend fun pollPlaybackHandoff(session: SavedSession) {
@@ -707,6 +902,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun logout() {
+        podcastSearchJob?.cancel()
         sessionStore.clear()
         _state.value = AppState()
     }

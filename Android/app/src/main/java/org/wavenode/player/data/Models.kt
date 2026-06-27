@@ -58,6 +58,24 @@ data class Track(
     val streamUrl: String = "",
     @SerialName("is_external")
     val isExternal: Boolean = false,
+    @SerialName("external_kind")
+    val externalKind: String = "",
+    @SerialName("podcast_id")
+    val podcastId: String = "",
+    @SerialName("podcast_title")
+    val podcastTitle: String = "",
+    @SerialName("podcast_publisher")
+    val podcastPublisher: String = "",
+    @SerialName("podcast_episode_id")
+    val podcastEpisodeId: String = "",
+    @SerialName("podcast_description")
+    val podcastDescription: String = "",
+    @SerialName("podcast_website_url")
+    val podcastWebsiteUrl: String = "",
+    @SerialName("podcast_progress_seconds")
+    val podcastProgressSeconds: Int = 0,
+    @SerialName("podcast_completed")
+    val podcastCompleted: Boolean = false,
     @SerialName("upload_order")
     val uploadOrder: Long = 0L,
     @SerialName("created_at")
@@ -230,6 +248,82 @@ data class PluginHomeRow(
     val subtitle: String = "",
     val type: String = "",
     val items: List<PluginRowItem> = emptyList(),
+)
+
+@Serializable
+data class Podcast(
+    val id: String,
+    val title: String = "",
+    val publisher: String = "",
+    val description: String = "",
+    @SerialName("image_url")
+    val imageUrl: String = "",
+    @SerialName("thumbnail_url")
+    val thumbnailUrl: String = "",
+    @SerialName("website_url")
+    val websiteUrl: String = "",
+    @SerialName("total_episodes")
+    val totalEpisodes: Int = 0,
+    val explicit: Boolean = false,
+)
+
+@Serializable
+data class PodcastSearchResponse(
+    val query: String = "",
+    val total: Int = 0,
+    val count: Int = 0,
+    val results: List<Podcast> = emptyList(),
+)
+
+@Serializable
+data class PodcastEpisode(
+    val id: String,
+    val title: String = "",
+    val description: String = "",
+    @SerialName("audio_url")
+    val audioUrl: String = "",
+    @SerialName("website_url")
+    val websiteUrl: String = "",
+    @SerialName("image_url")
+    val imageUrl: String = "",
+    @SerialName("published_at")
+    val publishedAt: String = "",
+    val duration: Int = 0,
+    val explicit: Boolean = false,
+    @SerialName("progress_seconds")
+    val progressSeconds: Int = 0,
+    val completed: Boolean = false,
+)
+
+@Serializable
+data class PodcastEpisodesResponse(
+    val podcast: Podcast,
+    val count: Int = 0,
+    val episodes: List<PodcastEpisode> = emptyList(),
+)
+
+@Serializable
+data class PodcastProgress(
+    @SerialName("podcast_id") val podcastId: String,
+    @SerialName("episode_id") val episodeId: String,
+    @SerialName("podcast_title") val podcastTitle: String,
+    val publisher: String = "",
+    @SerialName("episode_title") val episodeTitle: String,
+    val description: String = "",
+    @SerialName("image_url") val imageUrl: String = "",
+    @SerialName("audio_url") val audioUrl: String,
+    @SerialName("website_url") val websiteUrl: String = "",
+    @SerialName("published_at") val publishedAt: String? = null,
+    @SerialName("duration_seconds") val durationSeconds: Int = 0,
+    @SerialName("position_seconds") val positionSeconds: Int = 0,
+    val completed: Boolean = false,
+    @SerialName("updated_at") val updatedAt: String = "",
+)
+
+@Serializable
+data class PodcastHomeResponse(
+    @SerialName("continue_listening") val continueListening: List<PodcastProgress> = emptyList(),
+    @SerialName("top_podcasts") val topPodcasts: List<Podcast> = emptyList(),
 )
 
 data class SavedSession(

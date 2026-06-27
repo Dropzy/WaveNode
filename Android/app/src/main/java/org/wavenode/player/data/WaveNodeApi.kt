@@ -15,6 +15,7 @@ import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
+import java.util.Locale
 
 class WaveNodeApi(
     private val client: OkHttpClient = OkHttpClient.Builder()
@@ -70,6 +71,40 @@ class WaveNodeApi(
 
     suspend fun getPluginHomeRows(session: SavedSession): List<PluginHomeRow> = withContext(Dispatchers.IO) {
         getList(session, "/api/plugins/home-rows", "Could not load plugin rows")
+    }
+
+    suspend fun searchPodcasts(session: SavedSession, query: String): PodcastSearchResponse = withContext(Dispatchers.IO) {
+        getObject(
+            session,
+            "/api/podcasts/search?q=${queryValue(query)}&page_size=20",
+            "Could not search podcasts",
+        )
+    }
+
+    suspend fun getPodcastHome(session: SavedSession): PodcastHomeResponse = withContext(Dispatchers.IO) {
+        val country = Locale.getDefault().country.lowercase().takeIf { it.length == 2 } ?: "us"
+        getObject(session, "/api/podcasts/home?country=$country", "Could not load podcasts")
+    }
+
+    suspend fun getPodcastEpisodes(session: SavedSession, podcastId: String): PodcastEpisodesResponse = withContext(Dispatchers.IO) {
+        getObject(
+            session,
+            "/api/podcasts/${pathSegment(podcastId)}/episodes?limit=100",
+            "Could not load podcast episodes",
+        )
+    }
+
+    suspend fun updatePodcastProgress(session: SavedSession, progress: PodcastProgress): PodcastProgress = withContext(Dispatchers.IO) {
+        val body = json.encodeToString(progress).toRequestBody(jsonMediaType)
+        val request = authorizedRequest(session, "/api/podcasts/progress").put(body).build()
+        client.newCall(request).execute().use { response ->
+            val responseBody = response.body?.string().orEmpty()
+            val apiResponse = json.decodeFromString<ApiResponse<PodcastProgress>>(responseBody)
+            if (!response.isSuccessful || !apiResponse.success || apiResponse.data == null) {
+                throw IllegalStateException(apiResponse.error ?: "Could not save podcast progress")
+            }
+            apiResponse.data
+        }
     }
 
     suspend fun getAlbumTracks(session: SavedSession, albumId: String): AlbumTracksResponse = withContext(Dispatchers.IO) {

@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.DragHandle
@@ -119,6 +120,10 @@ import org.wavenode.player.data.Album
 import org.wavenode.player.data.Artist
 import org.wavenode.player.data.DiscoveredServer
 import org.wavenode.player.data.Playlist
+import org.wavenode.player.data.Podcast
+import org.wavenode.player.data.PodcastEpisode
+import org.wavenode.player.data.PodcastHomeResponse
+import org.wavenode.player.data.PodcastProgress
 import org.wavenode.player.data.PluginHomeRow
 import org.wavenode.player.data.PluginRowItem
 import org.wavenode.player.data.SavedSession
@@ -141,6 +146,7 @@ private enum class LibraryFilter(val label: String) {
     Albums("Albums"),
     Artists("Artists"),
     Tracks("Tracks"),
+    Podcasts("Podcasts"),
     Radio("Radio"),
 }
 
@@ -170,6 +176,8 @@ fun WaveNodeApp(
     onOpenAlbum: (Album) -> Unit,
     onOpenArtist: (Artist) -> Unit,
     onOpenPlaylist: (Playlist) -> Unit,
+    onPodcastQueryChange: (String) -> Unit,
+    onOpenPodcast: (Podcast) -> Unit,
     onCloseDetail: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onToggleShuffle: () -> Unit,
@@ -208,6 +216,8 @@ fun WaveNodeApp(
             onOpenAlbum = onOpenAlbum,
             onOpenArtist = onOpenArtist,
             onOpenPlaylist = onOpenPlaylist,
+            onPodcastQueryChange = onPodcastQueryChange,
+            onOpenPodcast = onOpenPodcast,
             onCloseDetail = onCloseDetail,
             onTogglePlayPause = onTogglePlayPause,
             onToggleShuffle = onToggleShuffle,
@@ -398,6 +408,8 @@ private fun MainShell(
     onOpenAlbum: (Album) -> Unit,
     onOpenArtist: (Artist) -> Unit,
     onOpenPlaylist: (Playlist) -> Unit,
+    onPodcastQueryChange: (String) -> Unit,
+    onOpenPodcast: (Podcast) -> Unit,
     onCloseDetail: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onToggleShuffle: () -> Unit,
@@ -629,6 +641,15 @@ private fun MainShell(
                     artists = state.artists,
                     playlists = state.playlists,
                     pluginRows = state.pluginRows,
+                    podcastQuery = state.podcastQuery,
+                    podcasts = state.podcasts,
+                    isLoadingPodcasts = state.isLoadingPodcasts,
+                    podcastError = state.podcastError,
+                    podcastHome = state.podcastHome,
+                    isLoadingPodcastHome = state.isLoadingPodcastHome,
+                    podcastHomeError = state.podcastHomeError,
+                    onPodcastQueryChange = onPodcastQueryChange,
+                    onOpenPodcast = onOpenPodcast,
                     playerState = playerState,
                     onPlayFromHere = onPlayFromHere,
                     onOpenAlbum = onOpenAlbum,
@@ -983,6 +1004,15 @@ private fun LibraryScreen(
     artists: List<Artist>,
     playlists: List<Playlist>,
     pluginRows: List<PluginHomeRow>,
+    podcastQuery: String,
+    podcasts: List<Podcast>,
+    isLoadingPodcasts: Boolean,
+    podcastError: String?,
+    podcastHome: PodcastHomeResponse,
+    isLoadingPodcastHome: Boolean,
+    podcastHomeError: String?,
+    onPodcastQueryChange: (String) -> Unit,
+    onOpenPodcast: (Podcast) -> Unit,
     playerState: PlayerState,
     onPlayFromHere: (Track, List<Track>) -> Unit,
     onOpenAlbum: (Album) -> Unit,
@@ -1044,10 +1074,21 @@ private fun LibraryScreen(
                         )
                     }
                 }
-                LibrarySortRow(
-                    selectedSort = selectedSort,
-                    onSortSelected = onSortSelected,
-                )
+                if (selectedFilter == LibraryFilter.Podcasts) {
+                    OutlinedTextField(
+                        value = podcastQuery,
+                        onValueChange = onPodcastQueryChange,
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        placeholder = { Text("Search podcasts") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    LibrarySortRow(
+                        selectedSort = selectedSort,
+                        onSortSelected = onSortSelected,
+                    )
+                }
             }
         }
 
@@ -1082,6 +1123,69 @@ private fun LibraryScreen(
                         onAddTracksToPlaylist = onAddTracksToPlaylist,
                         onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
                     )
+                }
+            }
+            LibraryFilter.Podcasts -> {
+                when {
+                    podcastQuery.isBlank() && isLoadingPodcastHome -> item {
+                        Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    }
+                    podcastQuery.isBlank() -> {
+                        if (podcastHome.continueListening.isNotEmpty()) {
+                            item { SectionHeader("Continue listening", null) }
+                            item {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    modifier = Modifier.padding(start = 16.dp),
+                                ) {
+                                    items(podcastHome.continueListening, key = { "${it.podcastId}:${it.episodeId}" }) { progress ->
+                                        val track = progress.toTrack()
+                                        PodcastContinueCard(
+                                            progress = progress,
+                                            playerState = playerState,
+                                            onClick = { onPlayFromHere(track, listOf(track)) },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        item { SectionHeader("Top podcasts", null) }
+                        if (podcastHome.topPodcasts.isEmpty()) {
+                            item { EmptyLibraryMessage(podcastHomeError ?: "Top podcasts are temporarily unavailable.") }
+                        } else {
+                            item {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    modifier = Modifier.padding(start = 16.dp),
+                                ) {
+                                    items(podcastHome.topPodcasts, key = { it.id }) { podcast ->
+                                        PodcastHomeCard(podcast = podcast, onClick = { onOpenPodcast(podcast) })
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    isLoadingPodcasts -> item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(24.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    }
+                    podcastError != null -> item {
+                        Text(
+                            text = podcastError,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    }
+                    podcasts.isEmpty() -> item { EmptyLibraryMessage("No podcasts found.") }
+                    else -> items(podcasts, key = { it.id }) { podcast ->
+                        PodcastLibraryRow(podcast = podcast, onClick = { onOpenPodcast(podcast) })
+                    }
                 }
             }
             LibraryFilter.Radio -> {
@@ -1293,6 +1397,87 @@ private fun LibraryArtistRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(artist.name, color = WaveText, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${artist.trackCount} tracks - ${artist.albumCount} albums", color = WaveSubtle, fontSize = 14.sp)
+        }
+    }
+}
+
+@Composable
+private fun PodcastLibraryRow(podcast: Podcast, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Artwork(
+            url = podcast.imageUrl.ifBlank { podcast.thumbnailUrl }.takeIf { it.isNotBlank() },
+            size = 74,
+            rounded = 8,
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = podcast.title.ifBlank { "Untitled podcast" },
+                color = WaveText,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 18.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = podcast.publisher.ifBlank { "Unknown publisher" },
+                color = WaveSubtle,
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (podcast.totalEpisodes > 0) {
+                Text("${podcast.totalEpisodes} episodes", color = WaveSubtle, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PodcastHomeCard(podcast: Podcast, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .size(172.dp, 230.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(WaveSurface)
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Artwork(url = podcast.imageUrl.ifBlank { podcast.thumbnailUrl }.takeIf { it.isNotBlank() }, size = 148, rounded = 8)
+        Text(podcast.title, color = WaveText, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(podcast.publisher, color = WaveSubtle, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun PodcastContinueCard(progress: PodcastProgress, playerState: PlayerState, onClick: () -> Unit) {
+    val isCurrent = playerState.currentTrack?.id == "podcast:${progress.podcastId}:${progress.episodeId}"
+    val position = if (isCurrent) (playerState.positionMs / 1000L).toInt() else progress.positionSeconds
+    val duration = if (isCurrent && playerState.durationMs > 0L) (playerState.durationMs / 1000L).toInt() else progress.durationSeconds
+    val fraction = if (duration > 0) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
+    Row(
+        modifier = Modifier
+            .size(300.dp, 112.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(WaveSurface)
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Artwork(url = progress.imageUrl.takeIf { it.isNotBlank() }, size = 84, rounded = 8)
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(progress.podcastTitle, color = WaveText, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(progress.episodeTitle, color = WaveSubtle, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth().height(3.dp))
+            Text("${formatDuration(((duration - position).coerceAtLeast(0)).toLong() * 1000L)} left", color = WaveSubtle, fontSize = 11.sp)
         }
     }
 }
@@ -1636,6 +1821,8 @@ private fun TrackRow(
     onClick: () -> Unit,
     onAddTracksToPlaylist: (List<Track>, Playlist) -> Unit,
     onCreatePlaylistWithTracks: (String, String, List<Track>) -> Unit = { _, _, _ -> },
+    playbackPositionMs: Long = 0L,
+    playbackDurationMs: Long = 0L,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var showPlaylistPicker by remember { mutableStateOf(false) }
@@ -1683,6 +1870,22 @@ private fun TrackRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (track.externalKind == "podcast" && (track.podcastProgressSeconds > 0 || track.podcastCompleted || isCurrent)) {
+                val position = if (isCurrent) (playbackPositionMs / 1000L).toInt() else track.podcastProgressSeconds
+                val total = if (isCurrent && playbackDurationMs > 0L) (playbackDurationMs / 1000L).toInt() else track.duration
+                val completed = track.podcastCompleted || (total > 0 && (total - position <= 30 || position.toFloat() / total >= 0.95f))
+                val fraction = if (total > 0) (position.toFloat() / total).coerceIn(0f, 1f) else 0f
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LinearProgressIndicator(
+                        progress = { if (completed) 1f else fraction },
+                        modifier = Modifier.weight(1f).height(3.dp),
+                        color = if (completed) Color(0xFF45C46F) else WaveAccent,
+                    )
+                    if (completed) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = "Played", tint = Color(0xFF45C46F), modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
         }
         Box {
             IconButton(onClick = { menuOpen = true }) {
@@ -2041,6 +2244,16 @@ private fun LibraryDetailScreen(
             artworkUrl = playlistArtworkFor(detail.playlist, tracks, trackArtworkUrl)
             albums = emptyList()
         }
+        is LibraryDetail.PodcastPage -> {
+            title = detail.podcast.title.ifBlank { "Untitled podcast" }
+            subtitle = listOfNotNull(
+                detail.podcast.publisher.takeIf { it.isNotBlank() },
+                "${detail.episodes.size} episodes",
+            ).joinToString(" - ")
+            tracks = detail.episodes.map { it.toTrack(detail.podcast) }
+            artworkUrl = detail.podcast.imageUrl.ifBlank { detail.podcast.thumbnailUrl }.takeIf { it.isNotBlank() }
+            albums = emptyList()
+        }
     }
     val visibleTracks = remember(tracks, shuffleSeed, selectedSort, detail) {
         if (shuffleSeed == 0 || tracks.size < 2) {
@@ -2096,20 +2309,22 @@ private fun LibraryDetailScreen(
                             modifier = Modifier.weight(1f),
                         ) {
                             Icon(Icons.Default.PlayArrow, contentDescription = null)
-                            Text("Play All")
+                            Text(if (detail is LibraryDetail.PodcastPage) "Play latest" else "Play All")
                         }
-                        IconButton(
-                            onClick = { shuffleSeed = Random.nextInt(1, Int.MAX_VALUE) },
-                            modifier = Modifier
-                                .size(50.dp)
-                                .clip(CircleShape)
-                                .background(WaveSurfaceRaised),
-                        ) {
-                            Icon(
-                                Icons.Default.Shuffle,
-                                contentDescription = "Shuffle tracks",
-                                tint = WaveAccent,
-                            )
+                        if (detail !is LibraryDetail.PodcastPage) {
+                            IconButton(
+                                onClick = { shuffleSeed = Random.nextInt(1, Int.MAX_VALUE) },
+                                modifier = Modifier
+                                    .size(50.dp)
+                                    .clip(CircleShape)
+                                    .background(WaveSurfaceRaised),
+                            ) {
+                                Icon(
+                                    Icons.Default.Shuffle,
+                                    contentDescription = "Shuffle tracks",
+                                    tint = WaveAccent,
+                                )
+                            }
                         }
                     }
                 }
@@ -2163,9 +2378,9 @@ private fun LibraryDetailScreen(
             }
         }
 
-        item { SectionHeader("Tracks", "${tracks.size}") }
+        item { SectionHeader(if (detail is LibraryDetail.PodcastPage) "Episodes" else "Tracks", "${tracks.size}") }
         if (tracks.isEmpty()) {
-            item { EmptyLibraryMessage("No tracks found.") }
+            item { EmptyLibraryMessage(if (detail is LibraryDetail.PodcastPage) "No playable episodes found." else "No tracks found.") }
         } else {
             itemsIndexed(visibleTracks, key = { _, track -> track.id }) { _, track ->
                 TrackRow(
@@ -2181,6 +2396,8 @@ private fun LibraryDetailScreen(
                     onClick = { onPlayFromHere(track, visibleTracks) },
                     onAddTracksToPlaylist = onAddTracksToPlaylist,
                     onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
+                    playbackPositionMs = playerState.positionMs,
+                    playbackDurationMs = playerState.durationMs,
                 )
             }
         }
@@ -3716,6 +3933,56 @@ private fun playlistArtworkFor(
         ?: tracks.firstOrNull()?.let(trackArtworkUrl)
 }
 
+private fun PodcastEpisode.toTrack(podcast: Podcast): Track {
+    return Track(
+        id = "podcast:${podcast.id}:$id",
+        title = title.ifBlank { "Untitled episode" },
+        artist = podcast.title.ifBlank { podcast.publisher.ifBlank { "Podcast" } },
+        album = podcast.title.ifBlank { "Podcast" },
+        genre = "Podcast",
+        duration = duration,
+        releaseDate = publishedAt,
+        imageUrl = imageUrl.ifBlank { podcast.imageUrl.ifBlank { podcast.thumbnailUrl } },
+        streamUrl = audioUrl,
+        isExternal = true,
+        externalKind = "podcast",
+        podcastId = podcast.id,
+        podcastTitle = podcast.title,
+        podcastPublisher = podcast.publisher,
+        podcastEpisodeId = id,
+        podcastDescription = description,
+        podcastWebsiteUrl = websiteUrl.ifBlank { podcast.websiteUrl },
+        podcastProgressSeconds = progressSeconds,
+        podcastCompleted = completed,
+        createdAt = publishedAt,
+    )
+}
+
+private fun PodcastProgress.toTrack(): Track {
+    return Track(
+        id = "podcast:$podcastId:$episodeId",
+        title = episodeTitle,
+        artist = podcastTitle.ifBlank { publisher.ifBlank { "Podcast" } },
+        album = podcastTitle.ifBlank { "Podcast" },
+        genre = "Podcast",
+        duration = durationSeconds,
+        releaseDate = publishedAt,
+        imageUrl = imageUrl,
+        streamUrl = audioUrl,
+        isExternal = true,
+        externalKind = "podcast",
+        podcastId = podcastId,
+        podcastTitle = podcastTitle,
+        podcastPublisher = publisher,
+        podcastEpisodeId = episodeId,
+        podcastDescription = description,
+        podcastWebsiteUrl = websiteUrl,
+        podcastProgressSeconds = positionSeconds,
+        podcastCompleted = completed,
+        createdAt = publishedAt.orEmpty(),
+    )
+}
+
 private fun pluginItemToTrack(pluginId: String, item: PluginRowItem): Track {
     return Track(
         id = "plugin:$pluginId:${item.id}",
@@ -3727,5 +3994,6 @@ private fun pluginItemToTrack(pluginId: String, item: PluginRowItem): Track {
         imageUrl = item.imageUrl,
         streamUrl = item.streamUrl,
         isExternal = true,
+        externalKind = "radio",
     )
 }

@@ -330,18 +330,18 @@ const Intro = styled.p`color:#b6bdb8;max-width:780px;margin:8px 0 24px;line-heig
 const Panel = styled.section`background:#151816;border:1px solid #2c322e;border-radius:14px;padding:22px;margin-bottom:20px;`
 const FieldGrid = styled.div`display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;@media(max-width:760px){grid-template-columns:1fr;}`
 const Label = styled.label`display:grid;gap:7px;color:#cbd0cc;font-size:13px;font-weight:700;`
-const Input = styled.input`width:100%;min-width:0;background:#242825;border:1px solid #414843;color:#fff;border-radius:8px;padding:11px 12px;&:focus{border-color:#1ed760;outline:none;}`
+const Input = styled.input`width:100%;min-width:0;background:#242825;border:1px solid #414843;color:#fff;border-radius:8px;padding:11px 12px;&:focus{border-color:${({ theme }) => theme.colors.accentHover};outline:none;}`
 const Select = styled.select`background:#242825;border:1px solid #414843;color:#fff;border-radius:8px;padding:10px 12px;`
 const RuleHeading = styled.div`display:flex;justify-content:space-between;align-items:center;gap:12px;margin:24px 0 12px;&>div{display:flex;align-items:center;gap:9px;font-weight:800;}`
 const Rules = styled.div`display:grid;gap:9px;`
 const Rule = styled.div`display:grid;grid-template-columns:1.1fr 1.2fr minmax(130px,2fr) 42px;gap:9px;@media(max-width:850px){grid-template-columns:1fr 1fr;}`
-const RuleGroup = styled.div`display:grid;gap:10px;padding:14px;border:1px solid #39423c;border-left:3px solid #1ed760;border-radius:10px;background:#1b1f1c;`
+const RuleGroup = styled.div`display:grid;gap:10px;padding:14px;border:1px solid #39423c;border-left:3px solid ${({ theme }) => theme.colors.accent};border-radius:10px;background:#1b1f1c;`
 const GroupHeader = styled.div`display:flex;justify-content:space-between;align-items:center;gap:12px;&>div{display:flex;align-items:center;gap:8px;font-weight:800;}@media(max-width:760px){align-items:flex-start;flex-direction:column;}`
 const GroupActions = styled.div`display:flex;flex-wrap:wrap;gap:8px;`
 const Options = styled.div`display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:22px;@media(max-width:700px){grid-template-columns:1fr;}`
 const Actions = styled.div`display:flex;justify-content:flex-end;gap:10px;margin-top:22px;`
 const SecondaryButton = styled.button`display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #59615b;color:#fff;border-radius:999px;padding:10px 16px;&:hover:not(:disabled){border-color:#fff;}&:disabled{opacity:.45;}`
-const PrimaryButton = styled(SecondaryButton)`background:#1ed760;border-color:#1ed760;color:#07130b;font-weight:900;`
+const PrimaryButton = styled(SecondaryButton)`background:${({ theme }) => theme.colors.accentGradient};border-color:${({ theme }) => theme.colors.accent};color:${({ theme }) => theme.colors.accentText};font-weight:900;`
 const IconButton = styled.button`display:grid;place-items:center;color:#d2d5d3;border-radius:8px;&:hover{background:#332224;color:#ff8b94;}`
 const ErrorText = styled.p`color:#ff858d;margin-top:14px;`
 const Muted = styled.p`color:#929a94;font-size:13px;`

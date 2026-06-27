@@ -73,7 +73,7 @@ export default function History() {
 const Page = styled.main`padding:28px clamp(18px,3vw,44px) 70px;overflow-y:auto;color:#fff;`
 const Header = styled.header`display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:22px;h1{display:flex;align-items:center;gap:10px;font-size:clamp(28px,4vw,42px);}p{color:#aeb5b0;margin-top:6px;}@media(max-width:760px){flex-direction:column;}`
 const Actions = styled.div`display:flex;flex-wrap:wrap;gap:9px;`
-const Button = styled.button`display:flex;align-items:center;gap:7px;padding:10px 14px;border:1px solid #505752;border-radius:999px;color:#fff;&:hover{border-color:#1ed760;}`
+const Button = styled.button`display:flex;align-items:center;gap:7px;padding:10px 14px;border:1px solid #505752;border-radius:999px;color:#fff;&:hover{border-color:${({ theme }) => theme.colors.accentHover};}`
 const DangerButton = styled(Button)`border-color:#71383d;color:#ff9ca2;`
 const SearchBox = styled.label`display:flex;align-items:center;gap:10px;max-width:560px;padding:10px 14px;border-radius:999px;background:#242725;color:#aaa;margin-bottom:18px;input{flex:1;background:none;border:0;color:#fff;outline:none;}`
 const List = styled.div`display:grid;gap:7px;`

@@ -79,6 +79,13 @@ export interface Music {
   updated_at: string
   stream_url?: string
   is_external?: boolean
+  external_kind?: 'radio' | 'podcast'
+  podcast_id?: string
+  podcast_title?: string
+  podcast_publisher?: string
+  podcast_episode_id?: string
+  podcast_description?: string
+  podcast_website_url?: string
 }
 
 export interface PluginRowItem {
@@ -224,6 +231,69 @@ export interface LastFMIntegrationSettings {
   shared_secret?: string
   has_shared_secret: boolean
   configured: boolean
+}
+
+export interface PodcastSearchResult {
+  id: string
+  title: string
+  publisher: string
+  description: string
+  image_url?: string
+  thumbnail_url?: string
+  website_url?: string
+  feed_url?: string
+  total_episodes?: number
+  explicit: boolean
+}
+
+export interface PodcastSearchResponse {
+  query: string
+  total: number
+  count: number
+  next_offset: number
+  results: PodcastSearchResult[]
+}
+
+export interface PodcastEpisode {
+  id: string
+  title: string
+  description: string
+  audio_url: string
+  website_url?: string
+  image_url?: string
+  published_at?: string
+  duration: number
+  explicit: boolean
+  progress_seconds: number
+  completed: boolean
+}
+
+export interface PodcastProgress {
+  podcast_id: string
+  episode_id: string
+  podcast_title: string
+  publisher: string
+  episode_title: string
+  description: string
+  image_url: string
+  audio_url: string
+  website_url: string
+  published_at?: string
+  duration_seconds: number
+  position_seconds: number
+  completed: boolean
+  updated_at: string
+}
+
+export interface PodcastHomeResponse {
+  continue_listening: PodcastProgress[]
+  top_podcasts: PodcastSearchResult[]
+}
+
+export interface PodcastEpisodesResponse {
+  podcast: PodcastSearchResult
+  count: number
+  episodes: PodcastEpisode[]
 }
 
 export interface UserSession {
@@ -877,6 +947,36 @@ export const adminIntegrationsAPI = {
   saveLastFM: async (settings: LastFMIntegrationSettings): Promise<LastFMIntegrationSettings> => {
     const response = await api.put<APIResponse<LastFMIntegrationSettings>>('/admin/integrations/lastfm', settings)
     return response.data.data || settings
+  },
+}
+
+export const podcastsAPI = {
+  getHome: async (): Promise<PodcastHomeResponse> => {
+    const country = navigator.language.split('-')[1]?.toLowerCase() || 'us'
+    const response = await api.get<APIResponse<PodcastHomeResponse>>('/podcasts/home', { params: { country } })
+    return response.data.data || { continue_listening: [], top_podcasts: [] }
+  },
+  search: async (query: string): Promise<PodcastSearchResponse> => {
+    const response = await api.get<APIResponse<PodcastSearchResponse>>('/podcasts/search', {
+      params: { q: query, page_size: 10 },
+    })
+    return response.data.data || { query, total: 0, count: 0, next_offset: 0, results: [] }
+  },
+  getEpisodes: async (podcastId: string): Promise<PodcastEpisodesResponse> => {
+    const response = await api.get<APIResponse<PodcastEpisodesResponse>>(`/podcasts/${encodeURIComponent(podcastId)}/episodes`, {
+      params: { limit: 50 },
+    })
+    if (!response.data.data) {
+      throw new Error(response.data.error || 'Podcast episodes could not be loaded')
+    }
+    return response.data.data
+  },
+  updateProgress: async (progress: Omit<PodcastProgress, 'updated_at' | 'completed'>): Promise<PodcastProgress> => {
+    const response = await api.put<APIResponse<PodcastProgress>>('/podcasts/progress', progress)
+    if (!response.data.data) {
+      throw new Error(response.data.error || 'Podcast progress could not be saved')
+    }
+    return response.data.data
   },
 }
 

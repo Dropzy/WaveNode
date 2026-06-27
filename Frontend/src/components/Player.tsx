@@ -660,7 +660,7 @@ export const Player: React.FC = () => {
   } = useAudio();
 
   const artworkUrl = getTrackArtworkUrl(currentTrack);
-  const isRadioStream = Boolean(currentTrack?.is_external && currentTrack.stream_url);
+  const isRadioStream = Boolean(currentTrack?.is_external && currentTrack.stream_url && currentTrack.external_kind !== 'podcast');
   const displayDuration = isRadioStream ? duration : (Number.isFinite(duration) && duration > 0 ? duration : currentTrack?.duration || 0);
   const displayTitle = isRadioStream && radioStreamTitle ? radioStreamTitle : currentTrack?.title;
   const displaySubtitle = isRadioStream && radioStreamTitle
@@ -713,7 +713,7 @@ export const Player: React.FC = () => {
 
   useEffect(() => {
     setRadioStreamTitle('');
-    if (!currentTrack?.is_external || !currentTrack.stream_url || !isPlaying) {
+    if (!isRadioStream || !currentTrack?.stream_url || !isPlaying) {
       return;
     }
 
@@ -737,10 +737,10 @@ export const Player: React.FC = () => {
       active = false;
       window.clearInterval(interval);
     };
-  }, [currentTrack, isPlaying]);
+  }, [currentTrack, isPlaying, isRadioStream]);
 
   useEffect(() => {
-    if (!radioStreamTitle || !currentTrack?.is_external || !('mediaSession' in navigator)) {
+    if (!radioStreamTitle || !isRadioStream || !currentTrack || !('mediaSession' in navigator)) {
       return;
     }
 
@@ -750,7 +750,7 @@ export const Player: React.FC = () => {
       album: currentTrack.album,
       artwork: artworkUrl ? [{ src: artworkUrl }] : [],
     });
-  }, [artworkUrl, currentTrack, radioStreamTitle]);
+  }, [artworkUrl, currentTrack, isRadioStream, radioStreamTitle]);
 
   useEffect(() => {
     if (!isConnectOpen) {

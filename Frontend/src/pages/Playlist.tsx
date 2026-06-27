@@ -167,7 +167,7 @@ const PlaylistActions = styled.div`
 const PlayButton = styled.button`
   width: 56px;
   height: 56px;
-  background-color: #1db954;
+  background-color: ${({ theme }) => theme.colors.accent};
   border: none;
   border-radius: 50%;
   display: flex;
@@ -178,7 +178,7 @@ const PlayButton = styled.button`
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
 
   &:hover {
-    background-color: #1ed760;
+    background-color: ${({ theme }) => theme.colors.accentHover};
     transform: scale(1.05);
   }
   
@@ -202,8 +202,8 @@ const ShuffleButton = styled.button`
   color: #b3b3b3;
 
   &:hover {
-    border-color: #1db954;
-    color: #1db954;
+    border-color: ${({ theme }) => theme.colors.accent};
+    color: ${({ theme }) => theme.colors.accent};
     transform: scale(1.05);
   }
   
@@ -231,8 +231,8 @@ const LikeButton = styled.button`
   }
 
   &.liked {
-    background-color: #1db954;
-    border-color: #1db954;
+    background-color: ${({ theme }) => theme.colors.accent};
+    border-color: ${({ theme }) => theme.colors.accent};
   }
   
   @media (max-width: 768px) {
@@ -293,7 +293,7 @@ const TrackItem = styled.div<{ $selected?: boolean }>`
   }
 
   &:focus-visible {
-    outline: 2px solid #1ed760;
+    outline: 2px solid ${({ theme }) => theme.colors.accentHover};
     outline-offset: 1px;
   }
   
@@ -332,13 +332,13 @@ const PlayIcon = styled.div<{ $visible?: boolean }>`
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: #1db954;
+  color: ${({ theme }) => theme.colors.accent};
   opacity: ${props => props.$visible ? 1 : 0};
   transition: opacity 0.2s ease;
   cursor: pointer;
   
   &:hover {
-    color: #1ed760;
+    color: ${({ theme }) => theme.colors.accentHover};
   }
 `
 
@@ -578,7 +578,7 @@ const FormInput = styled.input`
   
   &:focus {
     outline: none;
-    border-color: #1db954;
+    border-color: ${({ theme }) => theme.colors.accent};
   }
   
   &::placeholder {
@@ -599,7 +599,7 @@ const FormTextarea = styled.textarea`
   
   &:focus {
     outline: none;
-    border-color: #1db954;
+    border-color: ${({ theme }) => theme.colors.accent};
   }
   
   &::placeholder {
@@ -627,11 +627,11 @@ const Button = styled.button<{ $variant?: 'primary' | 'secondary' | 'danger' }>`
     switch (props.$variant) {
       case 'primary':
         return `
-          background-color: #1db954;
-          color: #000;
+          background-color: ${props.theme.colors.accent};
+          color: ${props.theme.colors.accentText};
           
           &:hover {
-            background-color: #1ed760;
+            background-color: ${props.theme.colors.accentHover};
           }
         `
       case 'danger':

@@ -405,14 +405,15 @@ const Page = styled.main`
 `
 const Backdrop = styled.div`
   position: fixed; inset: 0; pointer-events: none;
-  background: radial-gradient(circle at 50% -10%, rgba(30,215,96,.27), transparent 42%),
-    linear-gradient(145deg, #0b1a10 0%, #080b09 55%, #111 100%);
+  background:
+    radial-gradient(circle at 50% -10%, ${({ theme }) => theme.colors.accentSoft}, transparent 42%),
+    ${({ theme }) => theme.colors.contentGradient};
 `
 const Shell = styled.div`position: relative; width: min(880px, 100%);`
 const Brand = styled.div`display: flex; align-items: center; gap: 13px; margin-bottom: 26px;`
 const BrandMark = styled.div`
   width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center;
-  background: #1ed760; color: #07150c; box-shadow: 0 14px 35px rgba(30,215,96,.2);
+  background: ${({ theme }) => theme.colors.accentGradient}; color: ${({ theme }) => theme.colors.accentText}; box-shadow: 0 14px 35px ${({ theme }) => theme.colors.playerGlow};
 `
 const BrandName = styled.div`font-size: 22px; font-weight: 800; letter-spacing: -.4px;`
 const BrandCaption = styled.div`font-size: 13px; color: #9aa39d; margin-top: 2px;`
@@ -438,9 +439,9 @@ const Card = styled.section`
 const StepContent = styled.div`max-width: 690px; width: 100%; margin: 0 auto;`
 const IconPanel = styled.div`
   width: 58px; height: 58px; display: grid; place-items: center; border-radius: 17px;
-  color: #1ed760; background: rgba(30,215,96,.1); border: 1px solid rgba(30,215,96,.25); margin-bottom: 22px;
+  color: ${({ theme }) => theme.colors.accentHover}; background: ${({ theme }) => theme.colors.accentSoft}; border: 1px solid ${({ theme }) => theme.colors.borderStrong}; margin-bottom: 22px;
 `
-const Eyebrow = styled.div`color: #1ed760; text-transform: uppercase; letter-spacing: 1.5px; font-size: 12px; font-weight: 800;`
+const Eyebrow = styled.div`color: ${({ theme }) => theme.colors.accentHover}; text-transform: uppercase; letter-spacing: 1.5px; font-size: 12px; font-weight: 800;`
 const Title = styled.h1`font-size: clamp(30px, 5vw, 42px); line-height: 1.08; letter-spacing: -1.2px; margin: 8px 0 12px;`
 const Description = styled.p`color: #afb7b1; font-size: 16px; line-height: 1.55; max-width: 620px; margin-bottom: 28px;`
 const FormGrid = styled.div`display: grid; grid-template-columns: 1fr 1fr; gap: 18px; @media (max-width: 650px) { grid-template-columns: 1fr; }`
@@ -448,7 +449,7 @@ const Field = styled.div`
   display: flex; flex-direction: column; gap: 8px;
   label { color: #dce1dd; font-size: 13px; font-weight: 700; }
   input { width: 100%; padding: 13px 14px; border-radius: 9px; border: 1px solid #3a403c; background: #0c0f0d; color: #fff; font-size: 15px; }
-  input:focus { border-color: #1ed760; box-shadow: 0 0 0 3px rgba(30,215,96,.12); }
+  input:focus { border-color: ${({ theme }) => theme.colors.accentHover}; box-shadow: 0 0 0 3px ${({ theme }) => theme.colors.accentSoft}; }
 `
 const FolderList = styled.div`display: grid; gap: 9px; margin-bottom: 18px; max-height: 220px; overflow: auto;`
 const FolderRow = styled.div`display: flex; align-items: center; gap: 12px; padding: 13px 14px; border: 1px solid #303632; background: #0d100e; border-radius: 10px; color: #cfd5d1;`
@@ -464,7 +465,7 @@ const SummaryRow = styled.div`
 const ScanPanel = styled.div`margin-top: 26px; padding: 20px; background: #0c100d; border: 1px solid #2e3731; border-radius: 13px;`
 const ProgressHeader = styled.div`display: flex; justify-content: space-between; gap: 16px; font-weight: 700;`
 const ProgressTrack = styled.div`height: 8px; background: #303532; border-radius: 999px; margin: 15px 0 10px; overflow: hidden;`
-const ProgressFill = styled.div`height: 100%; background: #1ed760; border-radius: inherit; transition: width .3s ease;`
+const ProgressFill = styled.div`height: 100%; background: ${({ theme }) => theme.colors.accentHover}; border-radius: inherit; transition: width .3s ease;`
 const ScanDetail = styled.div`font-size: 13px; color: #a8b0aa;`
 const CurrentFile = styled.div`font-size: 12px; color: #747d76; margin-top: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;`
 const Notice = styled.div`margin-top: 18px; padding: 13px 15px; border-radius: 9px; color: #f2d77d; background: rgba(242,215,125,.08); border: 1px solid rgba(242,215,125,.2);`
@@ -475,8 +476,8 @@ const Actions = styled.div`display: flex; align-items: center; gap: 12px; max-wi
 const ActionSpacer = styled.div`flex: 1;`
 const PrimaryButton = styled.button`
   min-height: 45px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; padding: 0 19px;
-  border-radius: 999px; background: #1ed760; color: #08140c; font-weight: 800;
-  &:hover:not(:disabled) { background: #3be477; transform: translateY(-1px); }
+  border-radius: 999px; background: ${({ theme }) => theme.colors.accentGradient}; color: ${({ theme }) => theme.colors.accentText}; font-weight: 800;
+  &:hover:not(:disabled) { filter: brightness(1.07); transform: translateY(-1px); }
   &:disabled { opacity: .55; cursor: wait; }
 `
 const SecondaryButton = styled(PrimaryButton)`background: #252a27; color: #fff; border: 1px solid #3b423e; &:hover:not(:disabled) { background: #303632; }`
@@ -486,7 +487,7 @@ const Modal = styled.div`width: min(670px, 100%); max-height: min(720px, 90vh); 
 const ModalHeader = styled.div`display: flex; justify-content: space-between; gap: 20px; padding: 22px; border-bottom: 1px solid #2a302c; h2 { font-size: 20px; } p { color: #8f9891; font-size: 13px; margin-top: 5px; }`
 const LocationBar = styled.div`display: flex; gap: 10px; align-items: center; margin: 16px 18px 9px; padding: 11px 13px; background: #0b0e0c; border: 1px solid #323833; border-radius: 8px;`
 const RootButtons = styled.div`display: flex; flex-wrap: wrap; gap: 7px; padding: 0 18px 9px;`
-const RootButton = styled.button`padding: 6px 10px; border: 1px solid #343a36; color: #cbd1cd; border-radius: 7px; &:hover { border-color: #1ed760; }`
+const RootButton = styled.button`padding: 6px 10px; border: 1px solid #343a36; color: #cbd1cd; border-radius: 7px; &:hover { border-color: ${({ theme }) => theme.colors.accentHover}; }`
 const DirectoryList = styled.div`min-height: 240px; overflow: auto; padding: 8px 18px;`
 const DirectoryButton = styled.button`width: 100%; display: flex; align-items: center; gap: 11px; padding: 12px; color: #e1e5e2; border-radius: 8px; text-align: left; span { flex: 1; } &:hover { background: #242925; }`
 const PickerState = styled.div`min-height: 180px; display: flex; align-items: center; justify-content: center; gap: 9px; color: #8e9790;`

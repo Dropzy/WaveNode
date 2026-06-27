@@ -159,8 +159,8 @@ const PlaylistButton = styled.button`
   text-align: left;
 
   &:hover:not(:disabled) {
-    border-color: #1ed760;
-    background: #202d24;
+    border-color: ${({ theme }) => theme.colors.accentHover};
+    background: ${({ theme }) => theme.colors.accentSoft};
   }
 
   &:disabled {

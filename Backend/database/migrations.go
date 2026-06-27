@@ -172,6 +172,33 @@ func (db *DB) runMigrations() error {
 		return fmt.Errorf("failed to migrate playback and history features: %v", err)
 	}
 
+	podcastProgressMigration := `
+		CREATE TABLE IF NOT EXISTS podcast_progress (
+			user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			podcast_id VARCHAR(255) NOT NULL,
+			episode_id VARCHAR(255) NOT NULL,
+			podcast_title TEXT NOT NULL DEFAULT '',
+			publisher TEXT NOT NULL DEFAULT '',
+			episode_title TEXT NOT NULL DEFAULT '',
+			description TEXT NOT NULL DEFAULT '',
+			image_url TEXT NOT NULL DEFAULT '',
+			audio_url TEXT NOT NULL DEFAULT '',
+			website_url TEXT NOT NULL DEFAULT '',
+			published_at TIMESTAMP,
+			duration_seconds INTEGER NOT NULL DEFAULT 0 CHECK (duration_seconds >= 0),
+			position_seconds INTEGER NOT NULL DEFAULT 0 CHECK (position_seconds >= 0),
+			completed BOOLEAN NOT NULL DEFAULT FALSE,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (user_id, podcast_id, episode_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_podcast_progress_continue
+			ON podcast_progress(user_id, updated_at DESC)
+			WHERE position_seconds > 0 AND completed = FALSE;
+	`
+	if _, err := db.conn.Exec(podcastProgressMigration); err != nil {
+		return fmt.Errorf("failed to migrate podcast progress: %v", err)
+	}
+
 	pluginMigration := `
 		CREATE TABLE IF NOT EXISTS plugins (
 			id VARCHAR(100) PRIMARY KEY,
