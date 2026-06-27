@@ -15,10 +15,7 @@ services:
       retries: 10
 
   backend:
-    build:
-      context: ./Backend
-      args:
-        VERSION: ${WAVENODE_VERSION:-0.1.0}
+    image: ${WAVENODE_IMAGE_REGISTRY:-ghcr.io/dropzy/wavenode}/backend:${WAVENODE_IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       database:
@@ -33,6 +30,11 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       WAVENODE_ARTWORK_PATH: /data/artwork
       MUSIC_PATH: ""
+      WAVENODE_UPDATE_REPOSITORY: ${WAVENODE_UPDATE_REPOSITORY:-Dropzy/WaveNode}
+      WAVENODE_UPDATER_URL: ${WAVENODE_UPDATER_URL:-}
+      WAVENODE_UPDATER_TOKEN: ${WAVENODE_UPDATER_TOKEN:-}
+      WAVENODE_UPDATE_COMMAND: ${WAVENODE_UPDATE_COMMAND:-}
+      WAVENODE_UPDATE_TIMEOUT_SECONDS: ${WAVENODE_UPDATE_TIMEOUT_SECONDS:-900}
     volumes:
       - artwork_data:/data/artwork
       - type: bind
@@ -46,16 +48,32 @@ services:
       retries: 10
 
   frontend:
-    build:
-      context: ./Frontend
-      args:
-        VERSION: ${WAVENODE_VERSION:-0.1.0}
+    image: ${WAVENODE_IMAGE_REGISTRY:-ghcr.io/dropzy/wavenode}/frontend:${WAVENODE_IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
     ports:
-      - "${WAVENODE_BIND_ADDRESS:-0.0.0.0}:${WAVENODE_PORT:-8080}:80"
+      - "${WAVENODE_BIND_ADDRESS:-127.0.0.1}:${WAVENODE_PORT:-8080}:80"
+
+  updater:
+    image: ${WAVENODE_IMAGE_REGISTRY:-ghcr.io/dropzy/wavenode}/updater:${WAVENODE_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    profiles:
+      - updater
+    environment:
+      WAVENODE_VERSION: ${WAVENODE_VERSION:-0.1.0}
+      UPDATER_TOKEN: ${WAVENODE_UPDATER_TOKEN:-}
+      UPDATER_COMPOSE_FILES: ${WAVENODE_UPDATER_COMPOSE_FILES:-/compose/docker-compose.yml}
+      UPDATER_SERVICES: backend,frontend
+      UPDATER_TIMEOUT_SECONDS: ${WAVENODE_UPDATE_TIMEOUT_SECONDS:-900}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./docker-compose.yml:/compose/docker-compose.yml:ro
+      - ./docker-compose.dev.yml:/compose/docker-compose.dev.yml:ro
+      - ./docker-compose.internet.yml:/compose/docker-compose.internet.yml:ro
+      - ./.env:/compose/.env:ro
+    working_dir: /compose
 
 volumes:
   database_data:

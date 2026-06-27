@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import styled from 'styled-components'
 import { useNavigate } from 'react-router-dom'
-import { Play, Disc, Plus, ListMusic, Edit, Trash2, User, Music2, MoreVertical, Download, PlusCircle, Heart, X, Search, ArrowUpDown, Check, List, Rows3, Sparkles, Upload } from 'lucide-react'
-import { albumAPI, musicAPI, playlistAPI, artistAPI, likedTracksAPI, pluginsAPI, type PluginTrackAction } from '../services/api'
+import { Play, Pause, Disc, Plus, ListMusic, Edit, Trash2, User, Music2, MoreVertical, Download, PlusCircle, Heart, X, Search, ArrowUpDown, Check, CheckCircle2, List, Rows3, Sparkles, Upload, Podcast, ExternalLink, ArrowLeft, ChevronRight, type LucideIcon } from 'lucide-react'
+import { albumAPI, musicAPI, playlistAPI, artistAPI, likedTracksAPI, pluginsAPI, podcastsAPI, type Music as APIMusic, type PluginTrackAction, type PodcastEpisode, type PodcastHomeResponse, type PodcastProgress, type PodcastSearchResult } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useAudio } from '../contexts/AudioContext'
 import { getAlbumArtworkUrl, getArtworkGradient, getTrackArtworkUrl } from '../utils/mediaUrl'
@@ -76,11 +76,11 @@ type TrackSort =
   | 'duration-asc'
 
 type TrackView = 'compact' | 'list'
-type LibraryTab = 'playlists' | 'albums' | 'artists' | 'tracks' | 'downloads'
+type LibraryTab = 'playlists' | 'albums' | 'artists' | 'tracks' | 'downloads' | 'podcasts'
 
 const libraryTabStorageKey = 'wavenode.library.activeTab'
 const libraryDataStorageKey = 'wavenode.library.cache'
-const libraryTabs: LibraryTab[] = ['playlists', 'albums', 'artists', 'tracks', 'downloads']
+const libraryTabs: LibraryTab[] = ['playlists', 'albums', 'artists', 'tracks', 'downloads', 'podcasts']
 
 type CachedLibraryData = {
   music: Music[]
@@ -241,6 +241,302 @@ const MusicGrid = styled.div`
   @media (max-width: 480px) {
     grid-template-columns: repeat(2, 1fr);
     gap: 12px;
+  }
+`
+
+const PodcastGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+
+  @media (max-width: 640px) {
+    grid-template-columns: 1fr;
+  }
+`
+
+const PodcastHomeSection = styled.section`
+  margin-bottom: 32px;
+`
+
+const PodcastRow = styled.div`
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(260px, 340px);
+  gap: 16px;
+  overflow-x: auto;
+  padding: 2px 2px 10px;
+  scrollbar-width: thin;
+  scrollbar-color: #4a4a4a transparent;
+
+  &::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #4a4a4a;
+    border-radius: 3px;
+  }
+
+  @media (max-width: 640px) {
+    grid-auto-columns: minmax(250px, 86vw);
+  }
+`
+
+const PodcastCard = styled.button`
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 14px;
+  min-height: 128px;
+  padding: 14px;
+  border-radius: 8px;
+  background: #181818;
+  color: inherit;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+
+  &:hover,
+  &:focus-visible {
+    background: #282828;
+    transform: translateY(-1px);
+    outline: none;
+  }
+`
+
+const PodcastArt = styled.div<{ $imageUrl?: string }>`
+  width: 84px;
+  height: 84px;
+  border-radius: 8px;
+  background: ${props => props.$imageUrl ? `url(${props.$imageUrl}) center/cover` : props.theme.colors.accentGradient};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+`
+
+const PodcastInfo = styled.div`
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+`
+
+const PodcastTitle = styled.h3`
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+`
+
+const PodcastPublisher = styled.p`
+  color: #b3b3b3;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`
+
+const PodcastDescription = styled.p`
+  color: #d6d6d6;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+`
+
+const PodcastMeta = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #b3b3b3;
+  font-size: 12px;
+  margin-top: auto;
+`
+
+const PodcastShowHeader = styled.div`
+  display: grid;
+  grid-template-columns: 156px minmax(0, 1fr);
+  gap: 24px;
+  margin-bottom: 28px;
+
+  @media (max-width: 640px) {
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 16px;
+  }
+`
+
+const PodcastBackRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+`
+
+const PodcastShowArt = styled(PodcastArt)`
+  width: 156px;
+  height: 156px;
+
+  @media (max-width: 640px) {
+    width: 96px;
+    height: 96px;
+  }
+`
+
+const PodcastShowInfo = styled.div`
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+`
+
+const PodcastShowTitle = styled.h2`
+  margin: 0;
+  color: #fff;
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: 0;
+
+  @media (max-width: 640px) {
+    font-size: 18px;
+  }
+`
+
+const PodcastShowDescription = styled.p`
+  margin: 0;
+  color: #b3b3b3;
+  font-size: 13px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+`
+
+const PodcastHeaderActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+`
+
+const PodcastIconButton = styled.button`
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #2a2a2a;
+  color: #fff;
+  text-decoration: none;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    background: #3a3a3a;
+    outline: none;
+  }
+
+`
+
+const PodcastEpisodeList = styled.div`
+  display: flex;
+  flex-direction: column;
+`
+
+const PodcastEpisodeRow = styled.div`
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 82px;
+  padding: 12px 8px;
+  border-bottom: 1px solid #282828;
+
+  &:hover {
+    background: #181818;
+  }
+
+  @media (max-width: 640px) {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+`
+
+const PodcastEpisodeBody = styled.div`
+  min-width: 0;
+`
+
+const PodcastEpisodeTitle = styled.h3`
+  margin: 0 0 5px;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.35;
+  letter-spacing: 0;
+`
+
+const PodcastEpisodeDescription = styled.p`
+  margin: 0;
+  color: #b3b3b3;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+`
+
+const PodcastEpisodeMeta = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  color: #8f8f8f;
+  font-size: 11px;
+`
+
+const PodcastProgressTrack = styled.div`
+  width: 100%;
+  height: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+  background: #3a3a3a;
+  border-radius: 2px;
+`
+
+const PodcastProgressFill = styled.div<{ $progress: number; $completed?: boolean }>`
+  width: ${props => `${Math.max(0, Math.min(100, props.$progress))}%`};
+  height: 100%;
+  background: ${props => props.$completed ? '#45c46f' : props.theme.colors.accent};
+`
+
+const PodcastCompleted = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #45c46f;
+  font-weight: 600;
+`
+
+const PodcastEpisodeDuration = styled.span`
+  color: #b3b3b3;
+  font-size: 12px;
+  white-space: nowrap;
+
+  @media (max-width: 640px) {
+    display: none;
   }
 `
 
@@ -1240,8 +1536,9 @@ const Select = styled.select`
 `
 
 const formatDuration = (seconds: number): string => {
-  const minutes = Math.floor(seconds / 60)
-  const remainingSeconds = seconds % 60
+  const totalSeconds = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0))
+  const minutes = Math.floor(totalSeconds / 60)
+  const remainingSeconds = totalSeconds % 60
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }
 
@@ -1259,7 +1556,7 @@ const formatDateAdded = (dateString: string): string => {
 
 export const Library: React.FC = () => {
   const { isAuthenticated, token } = useAuth()
-  const { playFromQueue, playPlaylist, addToQueue } = useAudio()
+  const { currentTrack, isPlaying, currentTime, duration, playFromQueue, playFromQueueAt, playPlaylist, addToQueue, togglePlayPause } = useAudio()
   const navigate = useNavigate()
   const cachedLibraryData = useMemo(() => readCachedLibraryData(), [])
   const [music, setMusic] = useState<Music[]>(() => cachedLibraryData?.music || [])
@@ -1285,6 +1582,17 @@ export const Library: React.FC = () => {
   const [trackView, setTrackView] = useState<TrackView>('list')
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const [pluginTrackActions, setPluginTrackActions] = useState<PluginTrackAction[]>([])
+  const [podcasts, setPodcasts] = useState<PodcastSearchResult[]>([])
+  const [podcastsLoading, setPodcastsLoading] = useState(false)
+  const [podcastsError, setPodcastsError] = useState<string | null>(null)
+  const [podcastHome, setPodcastHome] = useState<PodcastHomeResponse>({ continue_listening: [], top_podcasts: [] })
+  const [podcastHomeLoading, setPodcastHomeLoading] = useState(false)
+  const [podcastHomeError, setPodcastHomeError] = useState<string | null>(null)
+  const [selectedPodcast, setSelectedPodcast] = useState<PodcastSearchResult | null>(null)
+  const [podcastEpisodes, setPodcastEpisodes] = useState<PodcastEpisode[]>([])
+  const [podcastEpisodesLoading, setPodcastEpisodesLoading] = useState(false)
+  const [podcastEpisodesError, setPodcastEpisodesError] = useState<string | null>(null)
+  const podcastRequestIdRef = useRef(0)
   const sortMenuRef = useRef<HTMLDivElement | null>(null)
   
   // Context menu state
@@ -1444,6 +1752,89 @@ export const Library: React.FC = () => {
   }, [isAuthenticated, token])
 
   useEffect(() => {
+    if (!isAuthenticated || !token || activeTab !== 'podcasts') {
+      return
+    }
+
+    const query = searchQuery.trim()
+    if (!query) {
+      setPodcasts([])
+      setPodcastsError(null)
+      setPodcastsLoading(false)
+      return
+    }
+
+    let isCurrent = true
+    const timeoutId = window.setTimeout(() => {
+      setPodcastsLoading(true)
+      setPodcastsError(null)
+      podcastsAPI.search(query)
+        .then(response => {
+          if (isCurrent) {
+            setPodcasts(response.results)
+          }
+        })
+        .catch(error => {
+          console.error('Failed to search podcasts:', error)
+          if (isCurrent) {
+            setPodcasts([])
+            setPodcastsError('Podcast search could not be loaded.')
+          }
+        })
+        .finally(() => {
+          if (isCurrent) {
+            setPodcastsLoading(false)
+          }
+        })
+    }, 300)
+
+    return () => {
+      isCurrent = false
+      window.clearTimeout(timeoutId)
+    }
+  }, [activeTab, isAuthenticated, searchQuery, token])
+
+  const loadPodcastHome = useCallback(async () => {
+    setPodcastHomeLoading(true)
+    setPodcastHomeError(null)
+    try {
+      setPodcastHome(await podcastsAPI.getHome())
+    } catch (requestError) {
+      console.error('Failed to load podcast home:', requestError)
+      setPodcastHomeError('Podcast recommendations could not be loaded.')
+    } finally {
+      setPodcastHomeLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isAuthenticated || !token || activeTab !== 'podcasts') return
+    void loadPodcastHome()
+  }, [activeTab, isAuthenticated, loadPodcastHome, token])
+
+  useEffect(() => {
+    const handleProgress = (event: Event) => {
+      const saved = (event as CustomEvent<PodcastProgress>).detail
+      if (!saved) return
+      setPodcastEpisodes(previous => previous.map(episode => episode.id === saved.episode_id
+        ? { ...episode, progress_seconds: saved.position_seconds, completed: saved.completed }
+        : episode))
+      setPodcastHome(previous => {
+        const remaining = previous.continue_listening.filter(item =>
+          item.podcast_id !== saved.podcast_id || item.episode_id !== saved.episode_id)
+        return {
+          ...previous,
+          continue_listening: saved.position_seconds > 0 && !saved.completed
+            ? [saved, ...remaining].slice(0, 12)
+            : remaining,
+        }
+      })
+    }
+    window.addEventListener('wavenode:podcast-progress', handleProgress)
+    return () => window.removeEventListener('wavenode:podcast-progress', handleProgress)
+  }, [])
+
+  useEffect(() => {
     const handleClickOutside = () => {
       setContextMenu({ visible: false, x: 0, y: 0, track: null })
     }
@@ -1480,6 +1871,8 @@ export const Library: React.FC = () => {
         return 'Search tracks...'
       case 'downloads':
         return 'Search downloads...'
+      case 'podcasts':
+        return 'Search podcasts...'
       default:
         return 'Search in your library...'
     }
@@ -2506,12 +2899,305 @@ export const Library: React.FC = () => {
     )
   }
 
-  const tabs: Array<{ id: LibraryTab; label: string; icon: typeof ListMusic }> = [
+  const openPodcast = async (podcast: PodcastSearchResult) => {
+    const requestId = ++podcastRequestIdRef.current
+    setSelectedPodcast(podcast)
+    setPodcastEpisodes([])
+    setPodcastEpisodesError(null)
+    setPodcastEpisodesLoading(true)
+    try {
+      const response = await podcastsAPI.getEpisodes(podcast.id)
+      if (podcastRequestIdRef.current === requestId) {
+        setSelectedPodcast(response.podcast)
+        setPodcastEpisodes(response.episodes)
+      }
+    } catch (requestError) {
+      console.error('Failed to load podcast episodes:', requestError)
+      if (podcastRequestIdRef.current === requestId) {
+        setPodcastEpisodesError('Episodes could not be loaded for this podcast.')
+      }
+    } finally {
+      if (podcastRequestIdRef.current === requestId) {
+        setPodcastEpisodesLoading(false)
+      }
+    }
+  }
+
+  const closePodcast = () => {
+    podcastRequestIdRef.current += 1
+    setSelectedPodcast(null)
+    setPodcastEpisodes([])
+    setPodcastEpisodesError(null)
+    setPodcastEpisodesLoading(false)
+  }
+
+  const podcastTrackID = (episode: PodcastEpisode) => `podcast:${selectedPodcast?.id || 'unknown'}:${episode.id}`
+
+  const podcastEpisodeTracks = useMemo<APIMusic[]>(() => {
+    if (!selectedPodcast) return []
+    return podcastEpisodes.map(episode => ({
+      id: `podcast:${selectedPodcast.id}:${episode.id}`,
+      title: episode.title || 'Untitled episode',
+      artist: selectedPodcast.title || selectedPodcast.publisher || 'Podcast',
+      album: selectedPodcast.title || 'Podcast',
+      genre: 'Podcast',
+      duration: episode.duration || 0,
+      release_date: episode.published_at || '',
+      file_path: '',
+      image_url: episode.image_url || selectedPodcast.image_url || selectedPodcast.thumbnail_url,
+      created_at: episode.published_at || '',
+      updated_at: episode.published_at || '',
+      stream_url: episode.audio_url,
+      is_external: true,
+      external_kind: 'podcast',
+      podcast_id: selectedPodcast.id,
+      podcast_title: selectedPodcast.title,
+      podcast_publisher: selectedPodcast.publisher,
+      podcast_episode_id: episode.id,
+      podcast_description: episode.description,
+      podcast_website_url: episode.website_url || selectedPodcast.website_url,
+    }))
+  }, [podcastEpisodes, selectedPodcast])
+
+  const formatPodcastDate = (value?: string) => {
+    if (!value) return ''
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+
+  const playPodcastEpisode = (episode: PodcastEpisode) => {
+    const index = podcastEpisodes.findIndex(item => item.id === episode.id)
+    const track = podcastEpisodeTracks[index]
+    if (!track) return
+    if (currentTrack?.id === track.id) {
+      void togglePlayPause()
+      return
+    }
+    playFromQueueAt(podcastEpisodeTracks, index, episode.completed ? 0 : episode.progress_seconds || 0)
+  }
+
+  const podcastProgressPercent = (position: number, total: number) => total > 0 ? (position / total) * 100 : 0
+
+  const continueTrack = (progress: PodcastProgress): APIMusic => ({
+    id: `podcast:${progress.podcast_id}:${progress.episode_id}`,
+    title: progress.episode_title,
+    artist: progress.podcast_title || progress.publisher || 'Podcast',
+    album: progress.podcast_title || 'Podcast',
+    genre: 'Podcast',
+    duration: progress.duration_seconds,
+    release_date: progress.published_at || '',
+    file_path: '',
+    image_url: progress.image_url,
+    created_at: progress.published_at || '',
+    updated_at: progress.updated_at,
+    stream_url: progress.audio_url,
+    is_external: true,
+    external_kind: 'podcast',
+    podcast_id: progress.podcast_id,
+    podcast_title: progress.podcast_title,
+    podcast_publisher: progress.publisher,
+    podcast_episode_id: progress.episode_id,
+    podcast_description: progress.description,
+    podcast_website_url: progress.website_url,
+  })
+
+  const resumePodcast = (progress: PodcastProgress) => {
+    const track = continueTrack(progress)
+    if (currentTrack?.id === track.id) {
+      void togglePlayPause()
+      return
+    }
+    playFromQueueAt([track], 0, progress.position_seconds)
+  }
+
+  const renderPodcastShow = () => {
+    if (!selectedPodcast) return null
+    const artwork = selectedPodcast.image_url || selectedPodcast.thumbnail_url
+    return (
+      <TabContent>
+        <SectionHeader>
+          <PodcastBackRow>
+            <PodcastIconButton onClick={closePodcast} title="Back to podcast search" aria-label="Back to podcast search">
+              <ArrowLeft size={18} />
+            </PodcastIconButton>
+            <SectionTitle>Episodes</SectionTitle>
+          </PodcastBackRow>
+        </SectionHeader>
+        <PodcastShowHeader>
+          <PodcastShowArt $imageUrl={artwork}>
+            {!artwork && <Podcast size={42} />}
+          </PodcastShowArt>
+          <PodcastShowInfo>
+            <PodcastShowTitle>{selectedPodcast.title || 'Untitled podcast'}</PodcastShowTitle>
+            <PodcastPublisher>{selectedPodcast.publisher || 'Unknown publisher'}</PodcastPublisher>
+            {selectedPodcast.description && <PodcastShowDescription>{selectedPodcast.description}</PodcastShowDescription>}
+            <PodcastHeaderActions>
+              {podcastEpisodes.length > 0 && (
+                <Button $variant="primary" onClick={() => playPodcastEpisode(podcastEpisodes[0])}>
+                  <Play size={16} /> Play latest
+                </Button>
+              )}
+              {selectedPodcast.website_url && (
+                <PodcastIconButton as="a" href={selectedPodcast.website_url} target="_blank" rel="noreferrer" title="Open podcast website" aria-label="Open podcast website">
+                  <ExternalLink size={17} />
+                </PodcastIconButton>
+              )}
+            </PodcastHeaderActions>
+          </PodcastShowInfo>
+        </PodcastShowHeader>
+        {podcastEpisodesLoading ? (
+          <LoadingMessage>Loading episodes...</LoadingMessage>
+        ) : podcastEpisodesError ? (
+          <ErrorMessage>{podcastEpisodesError}</ErrorMessage>
+        ) : podcastEpisodes.length === 0 ? (
+          <EmptyState>
+            <EmptyStateIcon><Podcast size={64} /></EmptyStateIcon>
+            <EmptyStateText>No playable episodes found</EmptyStateText>
+          </EmptyState>
+        ) : (
+          <PodcastEpisodeList>
+            {podcastEpisodes.map(episode => {
+              const active = currentTrack?.id === podcastTrackID(episode)
+              const published = formatPodcastDate(episode.published_at)
+              const shownPosition = active ? currentTime : episode.progress_seconds
+              const shownDuration = active && duration > 0 ? duration : episode.duration
+              const completed = active
+                ? shownDuration > 0 && (shownDuration - shownPosition <= 30 || shownPosition / shownDuration >= 0.95)
+                : episode.completed
+              return (
+                <PodcastEpisodeRow key={episode.id}>
+                  <PodcastIconButton
+                    onClick={() => playPodcastEpisode(episode)}
+                    title={active && isPlaying ? 'Pause episode' : 'Play episode'}
+                    aria-label={active && isPlaying ? 'Pause episode' : `Play ${episode.title}`}
+                  >
+                    {active && isPlaying ? <Pause size={17} /> : <Play size={17} />}
+                  </PodcastIconButton>
+                  <PodcastEpisodeBody>
+                    <PodcastEpisodeTitle>{episode.title || 'Untitled episode'}</PodcastEpisodeTitle>
+                    {episode.description && <PodcastEpisodeDescription>{episode.description}</PodcastEpisodeDescription>}
+                    <PodcastEpisodeMeta>
+                      {published && <span>{published}</span>}
+                      {episode.explicit && <span>Explicit</span>}
+                      {completed && <PodcastCompleted><CheckCircle2 size={13} /> Played</PodcastCompleted>}
+                    </PodcastEpisodeMeta>
+                    {(shownPosition > 0 || completed) && (
+                      <PodcastProgressTrack aria-label={`${Math.round(podcastProgressPercent(shownPosition, shownDuration))}% listened`}>
+                        <PodcastProgressFill $progress={completed ? 100 : podcastProgressPercent(shownPosition, shownDuration)} $completed={completed} />
+                      </PodcastProgressTrack>
+                    )}
+                  </PodcastEpisodeBody>
+                  <PodcastEpisodeDuration>{episode.duration ? formatDuration(episode.duration) : ''}</PodcastEpisodeDuration>
+                </PodcastEpisodeRow>
+              )
+            })}
+          </PodcastEpisodeList>
+        )}
+      </TabContent>
+    )
+  }
+
+  const renderPodcasts = () => {
+    if (selectedPodcast) return renderPodcastShow()
+    return (
+      <TabContent>
+        <SectionHeader>
+          <SectionTitle>Podcasts</SectionTitle>
+        </SectionHeader>
+        {!searchQuery.trim() ? (
+          podcastHomeLoading ? <LoadingMessage>Loading podcasts...</LoadingMessage> : (
+            <>
+              {podcastHome.continue_listening.length > 0 && (
+                <PodcastHomeSection>
+                  <SectionHeader><SectionTitle>Continue listening</SectionTitle></SectionHeader>
+                  <PodcastRow>
+                    {podcastHome.continue_listening.map(progress => {
+                      const active = currentTrack?.id === `podcast:${progress.podcast_id}:${progress.episode_id}`
+                      const position = active ? currentTime : progress.position_seconds
+                      const total = active && duration > 0 ? duration : progress.duration_seconds
+                      return (
+                        <PodcastCard key={`${progress.podcast_id}:${progress.episode_id}`} onClick={() => resumePodcast(progress)}>
+                          <PodcastArt $imageUrl={progress.image_url}>{!progress.image_url && <Podcast size={34} />}</PodcastArt>
+                          <PodcastInfo>
+                            <PodcastTitle>{progress.podcast_title}</PodcastTitle>
+                            <PodcastPublisher>{progress.episode_title}</PodcastPublisher>
+                            <PodcastMeta>{formatDuration(Math.max(0, total - position))} left</PodcastMeta>
+                            <PodcastProgressTrack>
+                              <PodcastProgressFill $progress={podcastProgressPercent(position, total)} />
+                            </PodcastProgressTrack>
+                          </PodcastInfo>
+                        </PodcastCard>
+                      )
+                    })}
+                  </PodcastRow>
+                </PodcastHomeSection>
+              )}
+              <PodcastHomeSection>
+                <SectionHeader><SectionTitle>Top podcasts</SectionTitle></SectionHeader>
+                {podcastHome.top_podcasts.length > 0 ? (
+                  <PodcastRow>
+                    {podcastHome.top_podcasts.map(podcast => (
+                      <PodcastCard key={podcast.id} onClick={() => void openPodcast(podcast)}>
+                        <PodcastArt $imageUrl={podcast.image_url || podcast.thumbnail_url}>
+                          {!podcast.image_url && !podcast.thumbnail_url && <Podcast size={34} />}
+                        </PodcastArt>
+                        <PodcastInfo>
+                          <PodcastTitle>{podcast.title}</PodcastTitle>
+                          <PodcastPublisher>{podcast.publisher}</PodcastPublisher>
+                          <PodcastMeta>Podcast <ChevronRight size={14} /></PodcastMeta>
+                        </PodcastInfo>
+                      </PodcastCard>
+                    ))}
+                  </PodcastRow>
+                ) : (
+                  <EmptyStateSubtext>{podcastHomeError || 'Top podcasts are temporarily unavailable.'}</EmptyStateSubtext>
+                )}
+              </PodcastHomeSection>
+            </>
+          )
+        ) : podcastsLoading ? (
+          <LoadingMessage>Searching podcasts...</LoadingMessage>
+        ) : podcastsError ? (
+          <ErrorMessage>{podcastsError}</ErrorMessage>
+        ) : podcasts.length === 0 ? (
+          <EmptyState>
+            <EmptyStateIcon><Podcast size={64} /></EmptyStateIcon>
+            <EmptyStateText>No podcasts found</EmptyStateText>
+            <EmptyStateSubtext>Try a different search term</EmptyStateSubtext>
+          </EmptyState>
+        ) : (
+          <PodcastGrid>
+            {podcasts.map(podcast => (
+              <PodcastCard key={podcast.id} onClick={() => void openPodcast(podcast)}>
+                <PodcastArt $imageUrl={podcast.thumbnail_url || podcast.image_url}>
+                  {!podcast.thumbnail_url && !podcast.image_url && <Podcast size={34} />}
+                </PodcastArt>
+                <PodcastInfo>
+                  <PodcastTitle>{podcast.title || 'Untitled podcast'}</PodcastTitle>
+                  <PodcastPublisher>{podcast.publisher || 'Unknown publisher'}</PodcastPublisher>
+                  {podcast.description && <PodcastDescription>{podcast.description}</PodcastDescription>}
+                  <PodcastMeta>
+                    {podcast.total_episodes ? <span>{podcast.total_episodes} episodes</span> : null}
+                    {podcast.explicit ? <span>Explicit</span> : null}
+                    <ChevronRight size={14} />
+                  </PodcastMeta>
+                </PodcastInfo>
+              </PodcastCard>
+            ))}
+          </PodcastGrid>
+        )}
+      </TabContent>
+    )
+  }
+
+  const tabs: Array<{ id: LibraryTab; label: string; icon: LucideIcon }> = [
     { id: 'playlists', label: 'Playlists', icon: ListMusic },
     { id: 'albums', label: 'Albums', icon: Disc },
     { id: 'artists', label: 'Artists', icon: User },
     { id: 'tracks', label: 'Tracks', icon: Music2 },
-    { id: 'downloads', label: 'Download', icon: Download }
+    { id: 'downloads', label: 'Download', icon: Download },
+    { id: 'podcasts', label: 'Podcasts', icon: Podcast },
   ]
 
   if (loading) {
@@ -2564,6 +3250,7 @@ export const Library: React.FC = () => {
         {activeTab === 'artists' && renderArtists()}
         {activeTab === 'tracks' && renderTracks()}
         {activeTab === 'downloads' && renderDownloads()}
+        {activeTab === 'podcasts' && renderPodcasts()}
       </TabsContainer>
 
       {/* Context Menu */}

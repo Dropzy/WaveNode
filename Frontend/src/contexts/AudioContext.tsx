@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode, useRef } from 'react';
-import { Music, musicAPI, playbackConnectAPI, recentlyPlayedAPI, scrobbleAPI } from '../services/api';
+import { Music, musicAPI, playbackConnectAPI, podcastsAPI, recentlyPlayedAPI, scrobbleAPI } from '../services/api';
 import { audioService } from '../services/audioService';
 import { useAuth } from './AuthContext';
 import { getTrackArtworkUrl } from '../utils/mediaUrl';
@@ -43,6 +43,7 @@ interface AudioContextType {
   isLoading: boolean;
   playTrack: (track: Music) => Promise<void>;
   playFromQueue: (tracks: Music[], index: number) => void;
+  playFromQueueAt: (tracks: Music[], index: number, positionSeconds: number) => void;
   playPlaylist: (tracks: Music[]) => void;
   playPlaylistShuffled: (tracks: Music[]) => void;
   addToQueue: (track: Music) => void;
@@ -147,6 +148,8 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
   const connectedPlaybackSessionIdRef = useRef<string | null>(null);
   const remoteProgressIntervalRef = useRef<number | null>(null);
   const durationRef = useRef(duration);
+  const podcastProgressRef = useRef<{ track: Music; position: number; duration: number } | null>(null);
+  const lastPodcastReportRef = useRef<{ key: string; position: number }>({ key: '', position: -1 });
 
   useEffect(() => {
     connectedPlaybackSessionIdRef.current = connectedPlaybackSessionId;
@@ -155,6 +158,72 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
   useEffect(() => {
     durationRef.current = duration;
   }, [duration]);
+
+  const reportPodcastProgress = useCallback(async () => {
+    const snapshot = podcastProgressRef.current;
+    if (!snapshot || snapshot.track.external_kind !== 'podcast' || !snapshot.track.podcast_id || !snapshot.track.podcast_episode_id) {
+      return;
+    }
+    const position = Math.max(0, Math.round(snapshot.position));
+    const totalDuration = Math.max(0, Math.round(snapshot.duration || snapshot.track.duration || 0));
+    const key = `${snapshot.track.podcast_id}:${snapshot.track.podcast_episode_id}`;
+    const lastReport = lastPodcastReportRef.current;
+    if (lastReport.key === key && lastReport.position === position) {
+      return;
+    }
+    lastPodcastReportRef.current = { key, position };
+    try {
+      const saved = await podcastsAPI.updateProgress({
+        podcast_id: snapshot.track.podcast_id,
+        episode_id: snapshot.track.podcast_episode_id,
+        podcast_title: snapshot.track.podcast_title || snapshot.track.album || 'Podcast',
+        publisher: snapshot.track.podcast_publisher || '',
+        episode_title: snapshot.track.title,
+        description: snapshot.track.podcast_description || '',
+        image_url: snapshot.track.image_url || '',
+        audio_url: snapshot.track.stream_url || '',
+        website_url: snapshot.track.podcast_website_url || '',
+        published_at: snapshot.track.release_date || undefined,
+        duration_seconds: totalDuration,
+        position_seconds: position,
+      });
+      window.dispatchEvent(new CustomEvent('wavenode:podcast-progress', { detail: saved }));
+    } catch (error) {
+      console.error('Failed to save podcast progress:', error);
+      lastPodcastReportRef.current = { key: '', position: -1 };
+    }
+  }, []);
+
+  useEffect(() => {
+    const previous = podcastProgressRef.current;
+    if (previous && previous.track.id !== currentTrack?.id) {
+      void reportPodcastProgress();
+    }
+    podcastProgressRef.current = currentTrack?.external_kind === 'podcast'
+      ? { track: currentTrack, position: currentTime, duration }
+      : null;
+  }, [currentTime, currentTrack, duration, reportPodcastProgress]);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      void reportPodcastProgress();
+    }
+  }, [isPlaying, reportPodcastProgress]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => void reportPodcastProgress(), 10_000);
+    const flushWhenHidden = () => {
+      if (document.visibilityState === 'hidden') void reportPodcastProgress();
+    };
+    window.addEventListener('pagehide', reportPodcastProgress);
+    document.addEventListener('visibilitychange', flushWhenHidden);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('pagehide', reportPodcastProgress);
+      document.removeEventListener('visibilitychange', flushWhenHidden);
+      void reportPodcastProgress();
+    };
+  }, [reportPodcastProgress]);
 
   useEffect(() => {
     queueRef.current = playlistQueue;
@@ -578,6 +647,13 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
     void playTrackLocally(tracks[safeIndex], positionSeconds);
   }, [playTrackLocally]);
 
+  const playFromQueueAt = useCallback((tracks: Music[], index: number, positionSeconds: number) => {
+    const safePosition = Math.max(0, positionSeconds);
+    void playRemoteQueue(tracks, index, safePosition).then(sent => {
+      if (!sent) playLocalFromQueueAt(tracks, index, safePosition);
+    });
+  }, [playLocalFromQueueAt, playRemoteQueue]);
+
   const connectPlaybackTo = useCallback(async (targetSessionId: string, deviceName: string) => {
     const activeQueue = queueRef.current.length > 0
       ? queueRef.current
@@ -825,6 +901,7 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
     isLoading,
     playTrack,
     playFromQueue,
+    playFromQueueAt,
     playPlaylist,
     playPlaylistShuffled,
     addToQueue,

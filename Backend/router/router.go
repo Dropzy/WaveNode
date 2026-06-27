@@ -44,6 +44,7 @@ type Router struct {
 	db                *database.DB
 	scanStore         *database.ScanStore
 	autoUpdater       *scanner.AutoUpdater
+	updateManager     *UpdateManager
 	setupToken        string
 	subsonicAuthCache sync.Map
 	playbackHandoffs  sync.Map
@@ -81,6 +82,7 @@ func NewRouter(
 		setupToken:        strings.TrimSpace(setupToken),
 		scanStore:         scanStore,
 		corsConfig:        corsConfig,
+		updateManager:     NewUpdateManager(WaveNodeVersion),
 	}
 	router.startArtistMetadataRefreshLoop()
 	return router
@@ -179,6 +181,10 @@ func (r *Router) SetupRoutes() *mux.Router {
 	protected.HandleFunc("/plugins/home-rows", r.getPluginHomeRows).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/plugins/radio-metadata", r.getPluginRadioMetadata).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/plugins/track-actions", r.getPluginTrackActions).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/podcasts/search", r.searchPodcasts).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/podcasts/home", r.getPodcastHome).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/podcasts/progress", r.updatePodcastProgress).Methods("PUT", "OPTIONS")
+	protected.HandleFunc("/podcasts/{id}/episodes", r.getPodcastEpisodes).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/discovery/settings", r.getDiscoverySettings).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/discovery/settings", r.updateDiscoverySettings).Methods("PUT", "OPTIONS")
 	protected.HandleFunc("/discovery/preview", r.previewDiscovery).Methods("GET", "OPTIONS")
@@ -228,6 +234,9 @@ func (r *Router) SetupRoutes() *mux.Router {
 	admin.HandleFunc("/backup", r.downloadBackup).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/restore", r.restoreBackup).Methods("POST", "OPTIONS")
 	admin.HandleFunc("/system/status", r.getSystemStatus).Methods("GET", "OPTIONS")
+	admin.HandleFunc("/system/update", r.getUpdateStatus).Methods("GET", "OPTIONS")
+	admin.HandleFunc("/system/update/check", r.checkForUpdate).Methods("POST", "OPTIONS")
+	admin.HandleFunc("/system/update/run", r.runUpdate).Methods("POST", "OPTIONS")
 	admin.HandleFunc("/library/diagnostics", r.getLibraryDiagnostics).Methods("GET", "OPTIONS")
 	admin.HandleFunc("/library", r.clearLibrary).Methods("DELETE", "OPTIONS")
 	admin.HandleFunc("/integrations/lastfm", r.getAdminLastFMIntegration).Methods("GET", "OPTIONS")

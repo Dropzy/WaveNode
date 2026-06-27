@@ -97,12 +97,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: mkdir -p /tmp/wavenode-music
-      - run: docker compose build
+      - run: docker compose -f docker-compose.yml -f docker-compose.dev.yml build
         env:
           POSTGRES_PASSWORD: ci-database-password
           JWT_SECRET: ci-only-secret-that-is-longer-than-thirty-two-characters
           MUSIC_PATH: /tmp/wavenode-music
-      - run: docker compose -f docker-compose.yml -f docker-compose.internet.yml config
+      - run: docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.internet.yml config
         env:
           POSTGRES_PASSWORD: ci-database-password
           JWT_SECRET: ci-only-secret-that-is-longer-than-thirty-two-characters
@@ -110,4 +110,10 @@ jobs:
           MUSIC_PATH: /tmp/wavenode-music
           WAVENODE_DOMAIN: music.example.com
           ACME_EMAIL: admin@example.com
+      - run: docker compose --profile updater -f docker-compose.yml -f docker-compose.dev.yml config
+        env:
+          POSTGRES_PASSWORD: ci-database-password
+          JWT_SECRET: ci-only-secret-that-is-longer-than-thirty-two-characters
+          MUSIC_PATH: /tmp/wavenode-music
+          WAVENODE_UPDATER_TOKEN: ci-updater-token-that-is-long-enough
       - run: docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" -e WAVENODE_DOMAIN=music.example.com -e ACME_EMAIL=admin@example.com caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile

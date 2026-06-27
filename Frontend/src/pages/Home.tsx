@@ -106,7 +106,7 @@ const PlayButton = styled.div`
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background-color: #1db954;
+  background-color: ${({ theme }) => theme.colors.accent};
   border-radius: 50%;
   width: 32px;
   height: 32px;
@@ -119,7 +119,7 @@ const PlayButton = styled.div`
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 
   &:hover {
-    background-color: #1ed760;
+    background-color: ${({ theme }) => theme.colors.accentHover};
     transform: translate(-50%, -50%) scale(1.05);
   }
 
@@ -393,6 +393,7 @@ const pluginItemToTrack = (pluginID: string, item: PluginRowItem): Music => ({
   updated_at: '',
   stream_url: item.stream_url,
   is_external: true,
+  external_kind: 'radio',
 })
 
 export const Home: React.FC = () => {

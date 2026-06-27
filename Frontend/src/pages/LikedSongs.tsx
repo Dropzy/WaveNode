@@ -161,13 +161,13 @@ const PlayIcon = styled.div<{ $visible?: boolean }>`
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: #1db954;
+  color: ${({ theme }) => theme.colors.accent};
   opacity: ${props => props.$visible ? 1 : 0};
   transition: opacity 0.2s ease;
   cursor: pointer;
   
   &:hover {
-    color: #1ed760;
+    color: ${({ theme }) => theme.colors.accentHover};
   }
 `
 

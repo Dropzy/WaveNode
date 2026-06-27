@@ -1,0 +1,16 @@
+services:
+  backend:
+    build:
+      context: ./Backend
+      args:
+        VERSION: ${WAVENODE_VERSION:-0.1.0}
+
+  frontend:
+    build:
+      context: ./Frontend
+      args:
+        VERSION: ${WAVENODE_VERSION:-0.1.0}
+
+  updater:
+    build:
+      context: ./Updater
