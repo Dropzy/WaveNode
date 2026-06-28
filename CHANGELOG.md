@@ -26,6 +26,20 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Optional internet deployment with automatic HTTPS certificates through Caddy.
 - First-run setup access codes for preventing remote administrator-account claims.
 
+## 0.1.2 - 2026-06-28
+
+### Fixed
+
+- Updates now target the existing WaveNode Compose project instead of creating a duplicate `compose` stack.
+- Updater version reporting now uses the version compiled into the released image.
+
+## 0.1.1 - 2026-06-28
+
+### Added
+
+- Podcast discovery, playback, progress synchronization, Continue Listening, and top-podcast rows on web and Android.
+- Automated release containers and the optional updater sidecar.
+
 ## 0.1.0 - 2026-06-10
 
 ### Added

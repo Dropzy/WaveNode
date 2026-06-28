@@ -16,6 +16,7 @@ else
 fi
 
 cd "$APP_DIR"
+app_version="$(cat VERSION)"
 
 random_base64() {
   if command -v openssl >/dev/null 2>&1; then
@@ -53,7 +54,7 @@ if [ ! -f .env ]; then
     printf 'MUSIC_PATH=%s\n' "$MUSIC_PATH"
     printf 'WAVENODE_BIND_ADDRESS=127.0.0.1\n'
     printf 'WAVENODE_PORT=8080\n'
-    printf 'WAVENODE_VERSION=0.1.0\n'
+    printf 'WAVENODE_VERSION=%s\n' "$app_version"
     printf 'ALLOW_REGISTRATION=false\n'
     printf 'CORS_ALLOWED_ORIGINS=\n'
     printf 'FANART_TV_API_KEY=\n'
@@ -69,7 +70,7 @@ else
   set_env_value MUSIC_PATH "$MUSIC_PATH"
   set_env_value WAVENODE_BIND_ADDRESS "127.0.0.1"
   set_env_value WAVENODE_PORT "8080"
-  set_env_value WAVENODE_VERSION "0.1.0"
+  set_env_value WAVENODE_VERSION "$app_version"
   set_env_value ALLOW_REGISTRATION "false"
   set_env_value WAVENODE_DOMAIN "$DOMAIN"
   set_env_value ACME_EMAIL "$ACME_EMAIL"
