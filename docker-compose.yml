@@ -1,3 +1,5 @@
+name: ${WAVENODE_COMPOSE_PROJECT_NAME:-wavenode}
+
 services:
   database:
     image: postgres:17-alpine
@@ -62,8 +64,8 @@ services:
     profiles:
       - updater
     environment:
-      WAVENODE_VERSION: ${WAVENODE_VERSION:-0.1.0}
       UPDATER_TOKEN: ${WAVENODE_UPDATER_TOKEN:-}
+      UPDATER_PROJECT_NAME: ${WAVENODE_COMPOSE_PROJECT_NAME:-wavenode}
       UPDATER_COMPOSE_FILES: ${WAVENODE_UPDATER_COMPOSE_FILES:-/compose/docker-compose.yml}
       UPDATER_SERVICES: backend,frontend
       UPDATER_TIMEOUT_SECONDS: ${WAVENODE_UPDATE_TIMEOUT_SECONDS:-900}

@@ -1,9 +1,11 @@
 FROM golang:1.25.11-alpine AS build
 
+ARG VERSION=dev
+
 WORKDIR /src
 COPY go.mod ./
 COPY main.go ./
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/wavenode-updater .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.WaveNodeVersion=${VERSION}" -o /out/wavenode-updater .
 
 FROM docker:28.5.2-cli
 

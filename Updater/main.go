@@ -33,10 +33,12 @@ type server struct {
 	status status
 }
 
+var WaveNodeVersion = "dev"
+
 func main() {
 	srv := &server{
 		status: status{
-			CurrentVersion:    strings.TrimPrefix(env("WAVENODE_VERSION", "0.1.0"), "v"),
+			CurrentVersion:    strings.TrimPrefix(env("WAVENODE_VERSION", WaveNodeVersion), "v"),
 			Enabled:           true,
 			CommandConfigured: true,
 			State:             "idle",
@@ -102,10 +104,7 @@ func (s *server) runUpdate() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 
-	composeArgs := []string{"compose"}
-	for _, file := range splitCSV(env("UPDATER_COMPOSE_FILES", "/compose/docker-compose.yml")) {
-		composeArgs = append(composeArgs, "-f", file)
-	}
+	composeArgs := updaterComposeArgs()
 	services := splitCSV(env("UPDATER_SERVICES", "backend,frontend"))
 
 	var output bytes.Buffer
@@ -131,6 +130,14 @@ func (s *server) runUpdate() {
 		return
 	}
 	s.finish("completed", "WaveNode containers updated.", output.String())
+}
+
+func updaterComposeArgs() []string {
+	args := []string{"compose", "--project-name", env("UPDATER_PROJECT_NAME", "wavenode")}
+	for _, file := range splitCSV(env("UPDATER_COMPOSE_FILES", "/compose/docker-compose.yml")) {
+		args = append(args, "-f", file)
+	}
+	return args
 }
 
 func (s *server) finish(state, message, output string) {
