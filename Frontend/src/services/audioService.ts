@@ -205,6 +205,14 @@ export class AudioService {
     this.onTrackEnd = callback;
   }
 
+	setPlaybackRate(rate: number): void {
+		this.audio.playbackRate = Math.max(0.5, Math.min(3, rate));
+	}
+
+	getPlaybackRate(): number {
+		return this.audio.playbackRate;
+	}
+
   setPlaybackErrorCallback(callback: (error: Error) => void): void {
     this.onPlaybackError = callback;
   }

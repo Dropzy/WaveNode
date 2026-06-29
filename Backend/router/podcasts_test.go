@@ -7,7 +7,7 @@ import (
 
 func TestParsePodcastRSS(t *testing.T) {
 	const document = `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:podcast="https://podcastindex.org/namespace/1.0">
   <channel>
     <title>Example Show</title>
     <description><![CDATA[An <b>example</b> podcast.]]></description>
@@ -21,6 +21,7 @@ func TestParsePodcastRSS(t *testing.T) {
       <pubDate>Fri, 27 Jun 2026 12:30:00 +0000</pubDate>
       <itunes:duration>01:02:03</itunes:duration>
       <itunes:explicit>yes</itunes:explicit>
+	  <podcast:chapters url="https://example.com/chapters.json" type="application/json+chapters" />
       <enclosure url="https://cdn.example.com/one.mp3" type="audio/mpeg" />
     </item>
     <item><title>Missing audio</title></item>
@@ -50,6 +51,9 @@ func TestParsePodcastRSS(t *testing.T) {
 	}
 	if episode.PublishedAt != "2026-06-27T12:30:00Z" {
 		t.Fatalf("unexpected published date: %s", episode.PublishedAt)
+	}
+	if episode.ChaptersURL != "https://example.com/chapters.json" {
+		t.Fatalf("unexpected chapters URL: %s", episode.ChaptersURL)
 	}
 }
 

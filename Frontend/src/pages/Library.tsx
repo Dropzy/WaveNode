@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import styled from 'styled-components'
 import { useNavigate } from 'react-router-dom'
-import { Play, Pause, Disc, Plus, ListMusic, Edit, Trash2, User, Music2, MoreVertical, Download, PlusCircle, Heart, X, Search, ArrowUpDown, Check, CheckCircle2, List, Rows3, Sparkles, Upload, Podcast, ExternalLink, ArrowLeft, ChevronRight, type LucideIcon } from 'lucide-react'
+import { Play, Pause, Disc, Plus, ListMusic, Edit, Trash2, User, Music2, MoreVertical, Download, PlusCircle, Heart, X, Search, ArrowUpDown, Check, CheckCircle2, List, Rows3, Sparkles, Upload, Podcast, ExternalLink, ArrowLeft, ChevronRight, Share2, ListPlus, type LucideIcon } from 'lucide-react'
 import { albumAPI, musicAPI, playlistAPI, artistAPI, likedTracksAPI, pluginsAPI, podcastsAPI, type Music as APIMusic, type PluginTrackAction, type PodcastEpisode, type PodcastHomeResponse, type PodcastProgress, type PodcastSearchResult } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useAudio } from '../contexts/AudioContext'
@@ -9,6 +9,7 @@ import { getAlbumArtworkUrl, getArtworkGradient, getTrackArtworkUrl } from '../u
 import { playlistsChangedEvent } from '../utils/playlistEvents'
 import { AddToPlaylistDialog } from '../components/TrackActionsMenu'
 import { useTrackSelection } from '../hooks/useTrackSelection'
+import { downloadPodcastEpisode, getPodcastDownloadUrl, hasPodcastDownload } from '../utils/podcastDownloads'
 
 // Define types
 interface Track {
@@ -478,6 +479,12 @@ const PodcastEpisodeRow = styled.div`
 
 const PodcastEpisodeBody = styled.div`
   min-width: 0;
+`
+
+const PodcastEpisodeActions = styled.div`
+	display: flex;
+	align-items: center;
+	gap: 4px;
 `
 
 const PodcastEpisodeTitle = styled.h3`
@@ -1585,13 +1592,15 @@ export const Library: React.FC = () => {
   const [podcasts, setPodcasts] = useState<PodcastSearchResult[]>([])
   const [podcastsLoading, setPodcastsLoading] = useState(false)
   const [podcastsError, setPodcastsError] = useState<string | null>(null)
-  const [podcastHome, setPodcastHome] = useState<PodcastHomeResponse>({ continue_listening: [], top_podcasts: [] })
+  const [podcastHome, setPodcastHome] = useState<PodcastHomeResponse>({ continue_listening: [], top_podcasts: [], subscriptions: [] })
   const [podcastHomeLoading, setPodcastHomeLoading] = useState(false)
   const [podcastHomeError, setPodcastHomeError] = useState<string | null>(null)
   const [selectedPodcast, setSelectedPodcast] = useState<PodcastSearchResult | null>(null)
   const [podcastEpisodes, setPodcastEpisodes] = useState<PodcastEpisode[]>([])
   const [podcastEpisodesLoading, setPodcastEpisodesLoading] = useState(false)
   const [podcastEpisodesError, setPodcastEpisodesError] = useState<string | null>(null)
+	const [downloadedPodcastEpisodes, setDownloadedPodcastEpisodes] = useState<Set<string>>(new Set())
+	const [autoDownloadPodcast, setAutoDownloadPodcast] = useState(false)
   const podcastRequestIdRef = useRef(0)
   const sortMenuRef = useRef<HTMLDivElement | null>(null)
   
@@ -2910,6 +2919,11 @@ export const Library: React.FC = () => {
       if (podcastRequestIdRef.current === requestId) {
         setSelectedPodcast(response.podcast)
         setPodcastEpisodes(response.episodes)
+		const downloaded = await Promise.all(response.episodes.map(async episode => ({
+			id: `podcast:${response.podcast.id}:${episode.id}`,
+			exists: await hasPodcastDownload(`podcast:${response.podcast.id}:${episode.id}`),
+		})))
+		setDownloadedPodcastEpisodes(new Set(downloaded.filter(item => item.exists).map(item => item.id)))
       }
     } catch (requestError) {
       console.error('Failed to load podcast episodes:', requestError)
@@ -2956,6 +2970,8 @@ export const Library: React.FC = () => {
       podcast_episode_id: episode.id,
       podcast_description: episode.description,
       podcast_website_url: episode.website_url || selectedPodcast.website_url,
+	  podcast_chapters_url: episode.chapters_url,
+	  podcast_chapters_type: episode.chapters_type,
     }))
   }, [podcastEpisodes, selectedPodcast])
 
@@ -2966,15 +2982,18 @@ export const Library: React.FC = () => {
     return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
-  const playPodcastEpisode = (episode: PodcastEpisode) => {
+  const playPodcastEpisode = async (episode: PodcastEpisode) => {
     const index = podcastEpisodes.findIndex(item => item.id === episode.id)
-    const track = podcastEpisodeTracks[index]
+    let track = podcastEpisodeTracks[index]
     if (!track) return
     if (currentTrack?.id === track.id) {
       void togglePlayPause()
       return
     }
-    playFromQueueAt(podcastEpisodeTracks, index, episode.completed ? 0 : episode.progress_seconds || 0)
+	const offlineUrl = await getPodcastDownloadUrl(track.id)
+	if (offlineUrl) track = { ...track, stream_url: offlineUrl }
+	const queue = podcastEpisodeTracks.map((item, itemIndex) => itemIndex === index ? track : item)
+    playFromQueueAt(queue, index, episode.completed ? 0 : episode.progress_seconds || 0)
   }
 
   const podcastProgressPercent = (position: number, total: number) => total > 0 ? (position / total) * 100 : 0
@@ -3002,14 +3021,60 @@ export const Library: React.FC = () => {
     podcast_website_url: progress.website_url,
   })
 
-  const resumePodcast = (progress: PodcastProgress) => {
-    const track = continueTrack(progress)
+  const resumePodcast = async (progress: PodcastProgress) => {
+    let track = continueTrack(progress)
     if (currentTrack?.id === track.id) {
       void togglePlayPause()
       return
     }
-    playFromQueueAt([track], 0, progress.position_seconds)
+	try {
+		const response = await podcastsAPI.getEpisodes(progress.podcast_id)
+		const tracks = response.episodes.map(episode => ({
+			...continueTrack({ ...progress, episode_id: episode.id, episode_title: episode.title, description: episode.description,
+				audio_url: episode.audio_url, website_url: episode.website_url || response.podcast.website_url || '', image_url: episode.image_url || response.podcast.image_url || '',
+				published_at: episode.published_at, duration_seconds: episode.duration, position_seconds: episode.progress_seconds, completed: episode.completed }),
+			podcast_chapters_url: episode.chapters_url,
+		}));
+		const index = Math.max(0, tracks.findIndex(item => item.podcast_episode_id === progress.episode_id));
+		const offlineUrl = await getPodcastDownloadUrl(track.id)
+		if (offlineUrl) tracks[index] = { ...tracks[index], stream_url: offlineUrl }
+		playFromQueueAt(tracks, index, progress.position_seconds)
+	} catch {
+		const offlineUrl = await getPodcastDownloadUrl(track.id)
+		if (offlineUrl) track = { ...track, stream_url: offlineUrl }
+		playFromQueueAt([track], 0, progress.position_seconds)
+	}
   }
+
+	const togglePodcastSubscription = async () => {
+		if (!selectedPodcast) return
+		const existing = podcastHome.subscriptions.find(item => item.podcast_id === selectedPodcast.id)
+		if (existing) {
+			await podcastsAPI.unsubscribe(selectedPodcast.id)
+			setPodcastHome(previous => ({ ...previous, subscriptions: previous.subscriptions.filter(item => item.podcast_id !== selectedPodcast.id) }))
+			return
+		}
+		const saved = await podcastsAPI.subscribe({
+			podcast_id: selectedPodcast.id, title: selectedPodcast.title, publisher: selectedPodcast.publisher,
+			description: selectedPodcast.description || '', image_url: selectedPodcast.image_url || '', thumbnail_url: selectedPodcast.thumbnail_url || '',
+			website_url: selectedPodcast.website_url || '', feed_url: selectedPodcast.feed_url || '', auto_download: autoDownloadPodcast, playback_speed: 1,
+		})
+		setPodcastHome(previous => ({ ...previous, subscriptions: [saved, ...previous.subscriptions.filter(item => item.podcast_id !== saved.podcast_id)] }))
+		if (autoDownloadPodcast && podcastEpisodes[0]) await handlePodcastDownload(podcastEpisodes[0])
+	}
+
+	const handlePodcastDownload = async (episode: PodcastEpisode) => {
+		if (!selectedPodcast) return
+		const id = `podcast:${selectedPodcast.id}:${episode.id}`
+		await downloadPodcastEpisode(id, episode.audio_url)
+		setDownloadedPodcastEpisodes(previous => new Set(previous).add(id))
+	}
+
+	const sharePodcastEpisode = async (episode: PodcastEpisode) => {
+		const url = episode.website_url || selectedPodcast?.website_url || window.location.href
+		if (navigator.share) await navigator.share({ title: episode.title, text: episode.description, url })
+		else await navigator.clipboard.writeText(url)
+	}
 
   const renderPodcastShow = () => {
     if (!selectedPodcast) return null
@@ -3038,6 +3103,10 @@ export const Library: React.FC = () => {
                   <Play size={16} /> Play latest
                 </Button>
               )}
+			  <Button $variant="secondary" onClick={() => void togglePodcastSubscription()}>
+				{podcastHome.subscriptions.some(item => item.podcast_id === selectedPodcast.id) ? <><Check size={16} /> Following</> : <><Plus size={16} /> Follow</>}
+			  </Button>
+			  <label><input type="checkbox" checked={autoDownloadPodcast} onChange={event => setAutoDownloadPodcast(event.target.checked)} /> Auto-download</label>
               {selectedPodcast.website_url && (
                 <PodcastIconButton as="a" href={selectedPodcast.website_url} target="_blank" rel="noreferrer" title="Open podcast website" aria-label="Open podcast website">
                   <ExternalLink size={17} />
@@ -3088,7 +3157,12 @@ export const Library: React.FC = () => {
                       </PodcastProgressTrack>
                     )}
                   </PodcastEpisodeBody>
-                  <PodcastEpisodeDuration>{episode.duration ? formatDuration(episode.duration) : ''}</PodcastEpisodeDuration>
+				  <PodcastEpisodeActions>
+					<PodcastIconButton onClick={() => addToQueue(podcastEpisodeTracks[podcastEpisodes.indexOf(episode)])} title="Add to queue" aria-label={`Add ${episode.title} to queue`}><ListPlus size={16} /></PodcastIconButton>
+					<PodcastIconButton onClick={() => void handlePodcastDownload(episode)} title={downloadedPodcastEpisodes.has(podcastTrackID(episode)) ? 'Downloaded' : 'Download episode'} aria-label={`Download ${episode.title}`}><Download size={16} /></PodcastIconButton>
+					<PodcastIconButton onClick={() => void sharePodcastEpisode(episode)} title="Share episode" aria-label={`Share ${episode.title}`}><Share2 size={16} /></PodcastIconButton>
+					<PodcastEpisodeDuration>{episode.duration ? formatDuration(episode.duration) : ''}</PodcastEpisodeDuration>
+				  </PodcastEpisodeActions>
                 </PodcastEpisodeRow>
               )
             })}
@@ -3133,6 +3207,17 @@ export const Library: React.FC = () => {
                   </PodcastRow>
                 </PodcastHomeSection>
               )}
+			  {podcastHome.subscriptions.length > 0 && (
+				<PodcastHomeSection>
+				  <SectionHeader><SectionTitle>Following</SectionTitle></SectionHeader>
+				  <PodcastRow>{podcastHome.subscriptions.map(subscription => (
+					<PodcastCard key={subscription.podcast_id} onClick={() => void openPodcast({ id: subscription.podcast_id, title: subscription.title, publisher: subscription.publisher, description: subscription.description, image_url: subscription.image_url, thumbnail_url: subscription.thumbnail_url, website_url: subscription.website_url, feed_url: subscription.feed_url, explicit: false })}>
+					  <PodcastArt $imageUrl={subscription.image_url || subscription.thumbnail_url}>{!subscription.image_url && <Podcast size={34} />}</PodcastArt>
+					  <PodcastInfo><PodcastTitle>{subscription.title}</PodcastTitle><PodcastPublisher>{subscription.publisher}</PodcastPublisher><PodcastMeta>Following <ChevronRight size={14} /></PodcastMeta></PodcastInfo>
+					</PodcastCard>
+				  ))}</PodcastRow>
+				</PodcastHomeSection>
+			  )}
               <PodcastHomeSection>
                 <SectionHeader><SectionTitle>Top podcasts</SectionTitle></SectionHeader>
                 {podcastHome.top_podcasts.length > 0 ? (

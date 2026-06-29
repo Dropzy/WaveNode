@@ -65,6 +65,7 @@ class MainActivity : ComponentActivity() {
                     onOpenPlaylist = viewModel::openPlaylist,
                     onPodcastQueryChange = viewModel::updatePodcastSearch,
                     onOpenPodcast = viewModel::openPodcast,
+                    onResumePodcast = viewModel::resumePodcast,
                     onCloseDetail = viewModel::closeDetail,
                     onTogglePlayPause = viewModel::togglePlayPause,
                     onToggleShuffle = viewModel::toggleShuffle,

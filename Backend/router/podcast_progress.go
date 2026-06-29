@@ -19,8 +19,9 @@ const applePodcastChartsURL = "https://rss.marketingtools.apple.com/api/v2/%s/po
 var podcastCountryPattern = regexp.MustCompile(`^[a-z]{2}$`)
 
 type podcastHomeResponse struct {
-	ContinueListening []database.PodcastProgress `json:"continue_listening"`
-	TopPodcasts       []podcastSearchResult      `json:"top_podcasts"`
+	ContinueListening []database.PodcastProgress     `json:"continue_listening"`
+	TopPodcasts       []podcastSearchResult          `json:"top_podcasts"`
+	Subscriptions     []database.PodcastSubscription `json:"subscriptions"`
 }
 
 type applePodcastChart struct {
@@ -61,6 +62,11 @@ func (r *Router) getPodcastHome(w http.ResponseWriter, req *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	subscriptions, err := r.db.ListPodcastSubscriptions(requestUserID(req))
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	topPodcasts, err := requestApplePodcastChart(country)
 	if err != nil {
 		// Resume data remains useful when the external chart service is unavailable.
@@ -71,6 +77,7 @@ func (r *Router) getPodcastHome(w http.ResponseWriter, req *http.Request) {
 		"data": podcastHomeResponse{
 			ContinueListening: continueListening,
 			TopPodcasts:       topPodcasts,
+			Subscriptions:     subscriptions,
 		},
 	})
 }

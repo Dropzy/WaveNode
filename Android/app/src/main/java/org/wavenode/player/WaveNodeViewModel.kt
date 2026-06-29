@@ -354,6 +354,23 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun resumePodcast(progress: PodcastProgress) {
+        val session = _state.value.session ?: return
+        viewModelScope.launch {
+            runCatching { api.getPodcastEpisodes(session, progress.podcastId) }
+                .onSuccess { detail ->
+                    val queue = detail.episodes.map { it.toTrack(detail.podcast) }
+                    val track = queue.firstOrNull { it.podcastEpisodeId == progress.episodeId }
+                        ?: progress.toTrack()
+                    playFromHere(track, queue.ifEmpty { listOf(track) })
+                }
+                .onFailure {
+                    val track = progress.toTrack()
+                    playFromHere(track, listOf(track))
+                }
+        }
+    }
+
     fun closeDetail() {
         _state.value = _state.value.copy(activeDetail = null, isDetailLoading = false, detailError = null)
     }
@@ -935,6 +952,56 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
         val artists: List<Artist>,
         val playlists: List<Playlist>,
         val pluginRows: List<PluginHomeRow>,
+    )
+}
+
+private fun PodcastEpisode.toTrack(podcast: Podcast): Track {
+    return Track(
+        id = "podcast:${podcast.id}:$id",
+        title = title.ifBlank { "Untitled episode" },
+        artist = podcast.title.ifBlank { podcast.publisher.ifBlank { "Podcast" } },
+        album = podcast.title.ifBlank { "Podcast" },
+        genre = "Podcast",
+        duration = duration,
+        releaseDate = publishedAt,
+        imageUrl = imageUrl.ifBlank { podcast.imageUrl.ifBlank { podcast.thumbnailUrl } },
+        streamUrl = audioUrl,
+        isExternal = true,
+        externalKind = "podcast",
+        podcastId = podcast.id,
+        podcastTitle = podcast.title,
+        podcastPublisher = podcast.publisher,
+        podcastEpisodeId = id,
+        podcastDescription = description,
+        podcastWebsiteUrl = websiteUrl.ifBlank { podcast.websiteUrl },
+        podcastProgressSeconds = progressSeconds,
+        podcastCompleted = completed,
+        createdAt = publishedAt,
+    )
+}
+
+private fun PodcastProgress.toTrack(): Track {
+    return Track(
+        id = "podcast:$podcastId:$episodeId",
+        title = episodeTitle,
+        artist = podcastTitle.ifBlank { publisher.ifBlank { "Podcast" } },
+        album = podcastTitle.ifBlank { "Podcast" },
+        genre = "Podcast",
+        duration = durationSeconds,
+        releaseDate = publishedAt,
+        imageUrl = imageUrl,
+        streamUrl = audioUrl,
+        isExternal = true,
+        externalKind = "podcast",
+        podcastId = podcastId,
+        podcastTitle = podcastTitle,
+        podcastPublisher = publisher,
+        podcastEpisodeId = episodeId,
+        podcastDescription = description,
+        podcastWebsiteUrl = websiteUrl,
+        podcastProgressSeconds = positionSeconds,
+        podcastCompleted = completed,
+        createdAt = publishedAt.orEmpty(),
     )
 }
 

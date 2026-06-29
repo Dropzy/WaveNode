@@ -199,6 +199,47 @@ func (db *DB) runMigrations() error {
 		return fmt.Errorf("failed to migrate podcast progress: %v", err)
 	}
 
+	podcastFeaturesMigration := `
+		CREATE TABLE IF NOT EXISTS podcast_subscriptions (
+			user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			podcast_id VARCHAR(255) NOT NULL,
+			title TEXT NOT NULL DEFAULT '',
+			publisher TEXT NOT NULL DEFAULT '',
+			description TEXT NOT NULL DEFAULT '',
+			image_url TEXT NOT NULL DEFAULT '',
+			thumbnail_url TEXT NOT NULL DEFAULT '',
+			website_url TEXT NOT NULL DEFAULT '',
+			feed_url TEXT NOT NULL DEFAULT '',
+			auto_download BOOLEAN NOT NULL DEFAULT FALSE,
+			playback_speed DOUBLE PRECISION NOT NULL DEFAULT 1.0 CHECK (playback_speed BETWEEN 0.5 AND 3.0),
+			subscribed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (user_id, podcast_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_podcast_subscriptions_user
+			ON podcast_subscriptions(user_id, subscribed_at DESC);
+
+		CREATE TABLE IF NOT EXISTS podcast_preferences (
+			user_id VARCHAR(255) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+			default_playback_speed DOUBLE PRECISION NOT NULL DEFAULT 1.0 CHECK (default_playback_speed BETWEEN 0.5 AND 3.0),
+			skip_back_seconds INTEGER NOT NULL DEFAULT 15 CHECK (skip_back_seconds BETWEEN 5 AND 120),
+			skip_forward_seconds INTEGER NOT NULL DEFAULT 30 CHECK (skip_forward_seconds BETWEEN 5 AND 300),
+			auto_delete_played BOOLEAN NOT NULL DEFAULT TRUE,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS podcast_queues (
+			user_id VARCHAR(255) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+			items JSONB NOT NULL DEFAULT '[]'::jsonb,
+			current_index INTEGER NOT NULL DEFAULT 0 CHECK (current_index >= 0),
+			position_seconds INTEGER NOT NULL DEFAULT 0 CHECK (position_seconds >= 0),
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+	`
+	if _, err := db.conn.Exec(podcastFeaturesMigration); err != nil {
+		return fmt.Errorf("failed to migrate podcast features: %v", err)
+	}
+
 	pluginMigration := `
 		CREATE TABLE IF NOT EXISTS plugins (
 			id VARCHAR(100) PRIMARY KEY,

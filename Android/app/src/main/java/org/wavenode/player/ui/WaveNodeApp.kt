@@ -3,6 +3,7 @@ package org.wavenode.player.ui
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
@@ -11,6 +12,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,12 +21,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -81,6 +86,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -104,6 +111,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -178,6 +186,7 @@ fun WaveNodeApp(
     onOpenPlaylist: (Playlist) -> Unit,
     onPodcastQueryChange: (String) -> Unit,
     onOpenPodcast: (Podcast) -> Unit,
+    onResumePodcast: (PodcastProgress) -> Unit,
     onCloseDetail: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onToggleShuffle: () -> Unit,
@@ -218,6 +227,7 @@ fun WaveNodeApp(
             onOpenPlaylist = onOpenPlaylist,
             onPodcastQueryChange = onPodcastQueryChange,
             onOpenPodcast = onOpenPodcast,
+            onResumePodcast = onResumePodcast,
             onCloseDetail = onCloseDetail,
             onTogglePlayPause = onTogglePlayPause,
             onToggleShuffle = onToggleShuffle,
@@ -251,6 +261,7 @@ private fun LoginScreen(
     var serverUrl by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     LaunchedEffect(discoveredServers) {
         if (serverUrl.isBlank() && discoveredServers.size == 1) {
@@ -263,11 +274,14 @@ private fun LoginScreen(
             .fillMaxSize()
             .background(WaveBackground)
             .padding(24.dp),
-        contentAlignment = Alignment.Center,
+        contentAlignment = if (isLandscape) Alignment.TopCenter else Alignment.Center,
     ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 560.dp)
+                .verticalScroll(rememberScrollState()),
         ) {
             WaveNodeMark()
             Text(
@@ -410,6 +424,7 @@ private fun MainShell(
     onOpenPlaylist: (Playlist) -> Unit,
     onPodcastQueryChange: (String) -> Unit,
     onOpenPodcast: (Podcast) -> Unit,
+    onResumePodcast: (PodcastProgress) -> Unit,
     onCloseDetail: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onToggleShuffle: () -> Unit,
@@ -435,6 +450,14 @@ private fun MainShell(
     var showQueue by remember { mutableStateOf(false) }
     var showNowPlaying by remember { mutableStateOf(false) }
     var showAccountSheet by remember { mutableStateOf(false) }
+    val configuration = LocalConfiguration.current
+    val useNavigationRail = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val selectTab: (WaveTab) -> Unit = { tab ->
+        activeTab = tab
+        if (state.activeDetail != null) {
+            onCloseDetail()
+        }
+    }
 
     val filteredTracks = remember(state.tracks, searchQuery) {
         state.tracks.filterByQuery(searchQuery) { listOf(title, artist, album) }
@@ -471,7 +494,7 @@ private fun MainShell(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            if (!useNavigationRail) TopAppBar(
                 navigationIcon = {
                     AccountMenuButton(
                         session = state.session,
@@ -510,44 +533,77 @@ private fun MainShell(
             )
         },
         bottomBar = {
-            Column {
-                MiniPlayer(
-                    playerState = playerState,
-                    onTogglePlayPause = onTogglePlayPause,
-                    onSkipNext = onSkipNext,
-                    onSkipPrevious = onSkipPrevious,
-                    onOpenQueue = { showQueue = true },
-                    onOpenPlayer = { showNowPlaying = true },
-                    artworkUrl = playerState.currentTrack?.let(trackArtworkUrl),
-                )
-                NavigationBar(
+            if (!useNavigationRail) {
+                Column {
+                    MiniPlayer(
+                        playerState = playerState,
+                        onTogglePlayPause = onTogglePlayPause,
+                        onSkipNext = onSkipNext,
+                        onSkipPrevious = onSkipPrevious,
+                        onOpenQueue = { showQueue = true },
+                        onOpenPlayer = { showNowPlaying = true },
+                        artworkUrl = playerState.currentTrack?.let(trackArtworkUrl),
+                    )
+                    NavigationBar(
                     containerColor = WaveSurface,
                     contentColor = WaveText,
                     modifier = Modifier.navigationBarsPadding(),
-                ) {
-                    WaveTab.entries.forEach { tab ->
-                        NavigationBarItem(
-                            selected = activeTab == tab,
-                            onClick = {
-                                activeTab = tab
-                                if (state.activeDetail != null) {
-                                    onCloseDetail()
-                                }
-                            },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = { Text(tab.label) },
-                        )
+                    ) {
+                        WaveTab.entries.forEach { tab ->
+                            NavigationBarItem(
+                                selected = activeTab == tab,
+                                onClick = { selectTab(tab) },
+                                icon = { Icon(tab.icon, contentDescription = tab.label) },
+                                label = { Text(tab.label) },
+                            )
+                        }
                     }
                 }
             }
         },
         containerColor = WaveBackground,
     ) { padding ->
-        Column(
+        Row(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize(),
         ) {
+            if (useNavigationRail) {
+                NavigationRail(
+                    containerColor = WaveSurface,
+                    contentColor = WaveText,
+                    header = {
+                        AccountMenuButton(
+                            session = state.session,
+                            onOpenAccount = { showAccountSheet = true },
+                            onRefresh = onRefresh,
+                            onLogout = onLogout,
+                        )
+                    },
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .navigationBarsPadding(),
+                ) {
+                    WaveTab.entries.forEach { tab ->
+                        NavigationRailItem(
+                            selected = activeTab == tab,
+                            onClick = { selectTab(tab) },
+                            icon = { Icon(tab.icon, contentDescription = tab.label) },
+                        )
+                    }
+                }
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+            ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) {
+            Column(modifier = Modifier.fillMaxSize()) {
             if (state.activeDetail == null && activeTab == WaveTab.Search) {
                 OutlinedTextField(
                     value = searchQuery,
@@ -650,6 +706,7 @@ private fun MainShell(
                     podcastHomeError = state.podcastHomeError,
                     onPodcastQueryChange = onPodcastQueryChange,
                     onOpenPodcast = onOpenPodcast,
+                    onResumePodcast = onResumePodcast,
                     playerState = playerState,
                     onPlayFromHere = onPlayFromHere,
                     onOpenAlbum = onOpenAlbum,
@@ -666,6 +723,20 @@ private fun MainShell(
                 WaveTab.Create -> CreateScreen(
                     onCreatePlaylist = onCreatePlaylist,
                 )
+            }
+            }
+            }
+            if (useNavigationRail) {
+                MiniPlayer(
+                    playerState = playerState,
+                    onTogglePlayPause = onTogglePlayPause,
+                    onSkipNext = onSkipNext,
+                    onSkipPrevious = onSkipPrevious,
+                    onOpenQueue = { showQueue = true },
+                    onOpenPlayer = { showNowPlaying = true },
+                    artworkUrl = playerState.currentTrack?.let(trackArtworkUrl),
+                )
+            }
             }
         }
     }
@@ -1013,6 +1084,7 @@ private fun LibraryScreen(
     podcastHomeError: String?,
     onPodcastQueryChange: (String) -> Unit,
     onOpenPodcast: (Podcast) -> Unit,
+    onResumePodcast: (PodcastProgress) -> Unit,
     playerState: PlayerState,
     onPlayFromHere: (Track, List<Track>) -> Unit,
     onOpenAlbum: (Album) -> Unit,
@@ -1141,11 +1213,10 @@ private fun LibraryScreen(
                                     modifier = Modifier.padding(start = 16.dp),
                                 ) {
                                     items(podcastHome.continueListening, key = { "${it.podcastId}:${it.episodeId}" }) { progress ->
-                                        val track = progress.toTrack()
                                         PodcastContinueCard(
                                             progress = progress,
                                             playerState = playerState,
-                                            onClick = { onPlayFromHere(track, listOf(track)) },
+                                            onClick = { onResumePodcast(progress) },
                                         )
                                     }
                                 }
@@ -2980,19 +3051,59 @@ private fun NowPlayingSheet(
     val track = playerState.currentTrack ?: return
     val durationMs = effectiveDurationMs(playerState)
     val positionMs = playerState.positionMs.coerceAtMost(durationMs.coerceAtLeast(playerState.positionMs))
-    val isRadio = track.isExternal
+    val isPodcast = track.externalKind == "podcast"
+    val isRadio = track.isExternal && !isPodcast
+    val sourceLabel = when {
+        isRadio -> "Live radio"
+        isPodcast -> track.podcastTitle.ifBlank { track.album.ifBlank { "Podcast" } }
+        else -> track.album.ifBlank { "Your Library" }
+    }
     val connectLabel = connectedPlaybackDeviceName
         .takeIf { connectedPlaybackSessionId.isNotBlank() && it.isNotBlank() }
         ?.let { "Playing on $it" }
         ?: "Connect to a device"
     var showOutputPicker by remember { mutableStateOf(false) }
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     Surface(
         color = WaveBackground,
         contentColor = WaveText,
         modifier = Modifier.fillMaxSize(),
     ) {
-        Column(
+        if (isLandscape) {
+            LandscapeNowPlaying(
+                playerState = playerState,
+                artworkUrl = artworkUrl,
+                positionMs = positionMs,
+                durationMs = durationMs,
+                isRadio = isRadio,
+                isPodcast = isPodcast,
+                sourceLabel = sourceLabel,
+                connectLabel = connectLabel,
+                showOutputPicker = showOutputPicker,
+                onShowOutputPicker = {
+                    onRefreshConnectSessions()
+                    showOutputPicker = true
+                },
+                onHideOutputPicker = { showOutputPicker = false },
+                onDismiss = onDismiss,
+                onTogglePlayPause = onTogglePlayPause,
+                onToggleShuffle = onToggleShuffle,
+                onCycleRepeatMode = onCycleRepeatMode,
+                onSkipNext = onSkipNext,
+                onSkipPrevious = onSkipPrevious,
+                onSeekTo = onSeekTo,
+                onOpenQueue = onOpenQueue,
+                connectSessions = connectSessions,
+                currentSessionId = currentSessionId,
+                connectedPlaybackSessionId = connectedPlaybackSessionId,
+                isLoadingConnectSessions = isLoadingConnectSessions,
+                connectMessage = connectMessage,
+                onRefreshConnectSessions = onRefreshConnectSessions,
+                onConnectPlaybackTo = onConnectPlaybackTo,
+            )
+        } else {
+            Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
@@ -3018,7 +3129,7 @@ private fun NowPlayingSheet(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = if (isRadio) "Live radio" else track.album.ifBlank { "Your Library" },
+                        text = sourceLabel,
                         color = WaveText,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -3074,7 +3185,7 @@ private fun NowPlayingSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                if (isRadio) {
+                if (isRadio || isPodcast) {
                     Spacer(modifier = Modifier.size(58.dp))
                 } else {
                     ShuffleModeControl(
@@ -3087,10 +3198,14 @@ private fun NowPlayingSheet(
                 } else {
                     IconButton(
                         onClick = onSkipPrevious,
-                        enabled = playerState.currentIndex > 0 || playerState.repeatMode == WaveRepeatMode.All,
+                        enabled = playerState.currentIndex > 0 || (!isPodcast && playerState.repeatMode == WaveRepeatMode.All),
                         modifier = Modifier.size(58.dp),
                     ) {
-                        Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(38.dp))
+                        Icon(
+                            Icons.Default.SkipPrevious,
+                            contentDescription = if (isPodcast) "Previous episode" else "Previous",
+                            modifier = Modifier.size(38.dp),
+                        )
                     }
                 }
                 IconButton(
@@ -3112,13 +3227,17 @@ private fun NowPlayingSheet(
                 } else {
                     IconButton(
                         onClick = onSkipNext,
-                        enabled = playerState.currentIndex < playerState.queue.lastIndex || playerState.repeatMode == WaveRepeatMode.All,
+                        enabled = playerState.currentIndex < playerState.queue.lastIndex || (!isPodcast && playerState.repeatMode == WaveRepeatMode.All),
                         modifier = Modifier.size(58.dp),
                     ) {
-                        Icon(Icons.Default.SkipNext, contentDescription = "Next", modifier = Modifier.size(38.dp))
+                        Icon(
+                            Icons.Default.SkipNext,
+                            contentDescription = if (isPodcast) "Next episode" else "Next",
+                            modifier = Modifier.size(38.dp),
+                        )
                     }
                 }
-                if (isRadio) {
+                if (isRadio || isPodcast) {
                     Spacer(modifier = Modifier.size(48.dp))
                 } else {
                     RepeatModeControl(
@@ -3180,7 +3299,197 @@ private fun NowPlayingSheet(
                 )
             }
             Spacer(modifier = Modifier.height(2.dp))
+            }
         }
+    }
+}
+
+@Composable
+private fun LandscapeNowPlaying(
+    playerState: PlayerState,
+    artworkUrl: String?,
+    positionMs: Long,
+    durationMs: Long,
+    isRadio: Boolean,
+    isPodcast: Boolean,
+    sourceLabel: String,
+    connectLabel: String,
+    showOutputPicker: Boolean,
+    onShowOutputPicker: () -> Unit,
+    onHideOutputPicker: () -> Unit,
+    onDismiss: () -> Unit,
+    onTogglePlayPause: () -> Unit,
+    onToggleShuffle: () -> Unit,
+    onCycleRepeatMode: () -> Unit,
+    onSkipNext: () -> Unit,
+    onSkipPrevious: () -> Unit,
+    onSeekTo: (Long) -> Unit,
+    onOpenQueue: () -> Unit,
+    connectSessions: List<UserSession>,
+    currentSessionId: String,
+    connectedPlaybackSessionId: String,
+    isLoadingConnectSessions: Boolean,
+    connectMessage: String?,
+    onRefreshConnectSessions: () -> Unit,
+    onConnectPlaybackTo: (String) -> Unit,
+) {
+    val track = playerState.currentTrack ?: return
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(0.9f)
+                .fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Collapse")
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("PLAYING FROM WAVENODE", color = WaveSubtle, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = sourceLabel,
+                        color = WaveText,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            ArtworkHero(
+                url = artworkUrl,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1.1f)
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState())
+                .padding(end = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = track.title,
+                color = WaveText,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = track.artist,
+                color = WaveSubtle,
+                fontSize = 16.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!isRadio) {
+                CleanSeekBar(positionMs = positionMs, durationMs = durationMs, onSeekTo = onSeekTo)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                if (!isRadio && !isPodcast) ShuffleModeControl(playerState.isShuffleEnabled, onToggleShuffle)
+                if (!isRadio) {
+                    IconButton(
+                        onClick = onSkipPrevious,
+                        enabled = playerState.currentIndex > 0 || (!isPodcast && playerState.repeatMode == WaveRepeatMode.All),
+                        modifier = Modifier.size(52.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.SkipPrevious,
+                            contentDescription = if (isPodcast) "Previous episode" else "Previous",
+                            modifier = Modifier.size(34.dp),
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = onTogglePlayPause,
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(CircleShape)
+                        .background(WaveText),
+                ) {
+                    Icon(
+                        imageVector = if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (playerState.isPlaying) "Pause" else "Play",
+                        tint = WaveBackground,
+                        modifier = Modifier.size(38.dp),
+                    )
+                }
+                if (!isRadio) {
+                    IconButton(
+                        onClick = onSkipNext,
+                        enabled = playerState.currentIndex < playerState.queue.lastIndex || (!isPodcast && playerState.repeatMode == WaveRepeatMode.All),
+                        modifier = Modifier.size(52.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.SkipNext,
+                            contentDescription = if (isPodcast) "Next episode" else "Next",
+                            modifier = Modifier.size(34.dp),
+                        )
+                    }
+                    if (!isPodcast) RepeatModeControl(playerState.repeatMode, onCycleRepeatMode)
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClick = onShowOutputPicker),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(Icons.Default.Devices, contentDescription = null, tint = WaveAccent)
+                    Text(
+                        text = connectLabel,
+                        color = WaveAccent,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                IconButton(onClick = onOpenQueue, enabled = !isRadio) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = "Queue",
+                        tint = if (isRadio) WaveSubtle.copy(alpha = 0.35f) else WaveSubtle,
+                    )
+                }
+            }
+        }
+    }
+    if (showOutputPicker) {
+        ConnectDeviceSheet(
+            sessions = connectSessions,
+            currentSessionId = currentSessionId,
+            connectedPlaybackSessionId = connectedPlaybackSessionId,
+            isLoading = isLoadingConnectSessions,
+            message = connectMessage,
+            onRefresh = onRefreshConnectSessions,
+            onConnect = onConnectPlaybackTo,
+            onDismiss = onHideOutputPicker,
+        )
     }
 }
 
@@ -3783,14 +4092,15 @@ private fun playbackProgress(playerState: PlayerState): Float {
 }
 
 private fun effectiveDurationMs(playerState: PlayerState): Long {
-    if (playerState.currentTrack?.isExternal == true) {
+    val currentTrack = playerState.currentTrack
+    if (currentTrack?.isExternal == true && currentTrack.externalKind != "podcast") {
         return 0L
     }
     val measuredDuration = playerState.durationMs
     if (measuredDuration > 0L) {
         return measuredDuration
     }
-    val trackDurationSeconds = playerState.currentTrack?.duration ?: 0
+    val trackDurationSeconds = currentTrack?.duration ?: 0
     return if (trackDurationSeconds > 0) trackDurationSeconds * 1000L else 0L
 }
 
@@ -3955,31 +4265,6 @@ private fun PodcastEpisode.toTrack(podcast: Podcast): Track {
         podcastProgressSeconds = progressSeconds,
         podcastCompleted = completed,
         createdAt = publishedAt,
-    )
-}
-
-private fun PodcastProgress.toTrack(): Track {
-    return Track(
-        id = "podcast:$podcastId:$episodeId",
-        title = episodeTitle,
-        artist = podcastTitle.ifBlank { publisher.ifBlank { "Podcast" } },
-        album = podcastTitle.ifBlank { "Podcast" },
-        genre = "Podcast",
-        duration = durationSeconds,
-        releaseDate = publishedAt,
-        imageUrl = imageUrl,
-        streamUrl = audioUrl,
-        isExternal = true,
-        externalKind = "podcast",
-        podcastId = podcastId,
-        podcastTitle = podcastTitle,
-        podcastPublisher = publisher,
-        podcastEpisodeId = episodeId,
-        podcastDescription = description,
-        podcastWebsiteUrl = websiteUrl,
-        podcastProgressSeconds = positionSeconds,
-        podcastCompleted = completed,
-        createdAt = publishedAt.orEmpty(),
     )
 }
 

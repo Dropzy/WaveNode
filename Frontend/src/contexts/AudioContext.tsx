@@ -54,6 +54,13 @@ interface AudioContextType {
   togglePlayPause: () => Promise<void>;
   setVolume: (volume: number) => void;
   seekTo: (time: number) => void;
+	skipBy: (seconds: number) => void;
+	skipBackSeconds: number;
+	skipForwardSeconds: number;
+	playbackRate: number;
+	setPlaybackRate: (rate: number) => void;
+	sleepTimerRemaining: number;
+	setSleepTimer: (minutes: number | null) => void;
   nextTrack: () => void;
   previousTrack: () => void;
   toggleShuffle: () => void;
@@ -110,6 +117,10 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
   const [connectedPlaybackSessionId, setConnectedPlaybackSessionId] = useState<string | null>(null);
   const [connectedPlaybackDeviceName, setConnectedPlaybackDeviceName] = useState('');
   const [controlledByPlaybackSessionId, setControlledByPlaybackSessionId] = useState<string | null>(null);
+	const [playbackRate, setPlaybackRateState] = useState(1);
+	const [podcastPreferences, setPodcastPreferences] = useState({ default_playback_speed: 1, skip_back_seconds: 15, skip_forward_seconds: 30, auto_delete_played: true });
+	const [sleepTimerDeadline, setSleepTimerDeadline] = useState<number | null>(null);
+	const [sleepTimerRemaining, setSleepTimerRemaining] = useState(0);
 
   // Load recently played tracks when trigger changes and user is authenticated
   useEffect(() => {
@@ -127,6 +138,33 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
 
     loadRecentlyPlayed();
   }, [recentlyPlayedRefreshTrigger, authLoading, user, token]);
+
+	useEffect(() => {
+		if (authLoading || !user || !token) return;
+		void podcastsAPI.getPreferences().then(preferences => {
+			setPodcastPreferences(preferences);
+			setPlaybackRateState(preferences.default_playback_speed);
+			audioService.setPlaybackRate(preferences.default_playback_speed);
+		}).catch(error => console.error('Failed to load podcast preferences:', error));
+	}, [authLoading, token, user]);
+
+	useEffect(() => {
+		if (!sleepTimerDeadline) {
+			setSleepTimerRemaining(0);
+			return;
+		}
+		const update = () => {
+			const remaining = Math.max(0, Math.ceil((sleepTimerDeadline - Date.now()) / 1000));
+			setSleepTimerRemaining(remaining);
+			if (remaining === 0) {
+				audioService.pause();
+				setSleepTimerDeadline(null);
+			}
+		};
+		update();
+		const timer = window.setInterval(update, 1000);
+		return () => window.clearInterval(timer);
+	}, [sleepTimerDeadline]);
   
   // Internal queue management
   const [playlistQueue, setPlaylistQueue] = useState<Music[]>(initialSession.queue.length ? initialSession.queue : queue);
@@ -148,6 +186,7 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
   const connectedPlaybackSessionIdRef = useRef<string | null>(null);
   const remoteProgressIntervalRef = useRef<number | null>(null);
   const durationRef = useRef(duration);
+	const podcastQueueLoadedRef = useRef(false);
   const podcastProgressRef = useRef<{ track: Music; position: number; duration: number } | null>(null);
   const lastPodcastReportRef = useRef<{ key: string; position: number }>({ key: '', position: -1 });
 
@@ -187,6 +226,11 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
         duration_seconds: totalDuration,
         position_seconds: position,
       });
+	  await podcastsAPI.updateQueue({
+		items: queueRef.current.filter(item => item.external_kind === 'podcast'),
+		current_index: currentTrackIndexRef.current,
+		position_seconds: position,
+	  });
       window.dispatchEvent(new CustomEvent('wavenode:podcast-progress', { detail: saved }));
     } catch (error) {
       console.error('Failed to save podcast progress:', error);
@@ -534,6 +578,24 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
     audioService.seekTo(time);
   }, [isPlaying, sendPlaybackCommand, startRemoteProgressClock]);
 
+	const skipBy = useCallback((seconds: number) => {
+		const maximum = durationRef.current > 0 ? durationRef.current : Number.MAX_SAFE_INTEGER;
+		seekTo(Math.max(0, Math.min(maximum, currentTime + seconds)));
+	}, [currentTime, seekTo]);
+
+	const setPlaybackRate = useCallback((rate: number) => {
+		const nextRate = Math.max(0.5, Math.min(3, rate));
+		setPlaybackRateState(nextRate);
+		audioService.setPlaybackRate(nextRate);
+		const nextPreferences = { ...podcastPreferences, default_playback_speed: nextRate };
+		setPodcastPreferences(nextPreferences);
+		void podcastsAPI.updatePreferences(nextPreferences).catch(error => console.error('Failed to save podcast speed:', error));
+	}, [podcastPreferences]);
+
+	const setSleepTimer = useCallback((minutes: number | null) => {
+		setSleepTimerDeadline(minutes && minutes > 0 ? Date.now() + minutes * 60_000 : null);
+	}, []);
+
   const nextTrack = useCallback(() => {
     if (playlistQueue.length === 0) {
       return;
@@ -653,6 +715,33 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
       if (!sent) playLocalFromQueueAt(tracks, index, safePosition);
     });
   }, [playLocalFromQueueAt, playRemoteQueue]);
+
+	useEffect(() => {
+		if (authLoading || !user || !token || podcastQueueLoadedRef.current) return;
+		podcastQueueLoadedRef.current = true;
+		void podcastsAPI.getQueue().then(saved => {
+			if (!saved.items.length || (currentTrack && currentTrack.external_kind !== 'podcast')) return;
+			const safeIndex = Math.max(0, Math.min(saved.current_index, saved.items.length - 1));
+			setPlaylistQueue(saved.items);
+			setCurrentTrackIndex(safeIndex);
+			setCurrentTrack(saved.items[safeIndex]);
+			setCurrentTime(saved.position_seconds);
+			setDuration(saved.items[safeIndex].duration || 0);
+			void audioService.setTrack(saved.items[safeIndex], false, saved.position_seconds);
+		}).catch(error => console.error('Failed to restore podcast queue:', error));
+	}, [authLoading, currentTrack, token, user]);
+
+	useEffect(() => {
+		if (!podcastQueueLoadedRef.current || currentTrack?.external_kind !== 'podcast') return;
+		const timer = window.setTimeout(() => {
+			void podcastsAPI.updateQueue({
+				items: playlistQueue.filter(item => item.external_kind === 'podcast'),
+				current_index: currentTrackIndex,
+				position_seconds: Math.max(0, Math.round(currentTime)),
+			}).catch(error => console.error('Failed to sync podcast queue:', error));
+		}, 1000);
+		return () => window.clearTimeout(timer);
+	}, [currentTrack?.external_kind, currentTrackIndex, playlistQueue]);
 
   const connectPlaybackTo = useCallback(async (targetSessionId: string, deviceName: string) => {
     const activeQueue = queueRef.current.length > 0
@@ -912,6 +1001,13 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
     togglePlayPause,
     setVolume,
     seekTo,
+	skipBy,
+	skipBackSeconds: podcastPreferences.skip_back_seconds,
+	skipForwardSeconds: podcastPreferences.skip_forward_seconds,
+	playbackRate,
+	setPlaybackRate,
+	sleepTimerRemaining,
+	setSleepTimer,
     nextTrack,
     previousTrack,
     toggleShuffle,

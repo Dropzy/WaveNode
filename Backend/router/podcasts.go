@@ -47,17 +47,19 @@ type podcastSearchResponse struct {
 }
 
 type podcastEpisode struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	AudioURL    string `json:"audio_url"`
-	WebsiteURL  string `json:"website_url,omitempty"`
-	ImageURL    string `json:"image_url,omitempty"`
-	PublishedAt string `json:"published_at,omitempty"`
-	Duration    int    `json:"duration"`
-	Explicit    bool   `json:"explicit"`
-	Progress    int    `json:"progress_seconds"`
-	Completed   bool   `json:"completed"`
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	Description  string `json:"description"`
+	AudioURL     string `json:"audio_url"`
+	WebsiteURL   string `json:"website_url,omitempty"`
+	ImageURL     string `json:"image_url,omitempty"`
+	PublishedAt  string `json:"published_at,omitempty"`
+	Duration     int    `json:"duration"`
+	Explicit     bool   `json:"explicit"`
+	Progress     int    `json:"progress_seconds"`
+	Completed    bool   `json:"completed"`
+	ChaptersURL  string `json:"chapters_url,omitempty"`
+	ChaptersType string `json:"chapters_type,omitempty"`
 }
 
 type podcastEpisodesResponse struct {
@@ -108,6 +110,10 @@ type podcastRSS struct {
 				URL  string `xml:"url,attr"`
 				Type string `xml:"type,attr"`
 			} `xml:"enclosure"`
+			Chapters struct {
+				URL  string `xml:"url,attr"`
+				Type string `xml:"type,attr"`
+			} `xml:"chapters"`
 		} `xml:"item"`
 	} `xml:"channel"`
 }
@@ -329,15 +335,17 @@ func parsePodcastRSS(reader io.Reader, limit int) ([]podcastEpisode, parsedPodca
 		description := podcastPlainText(podcastFirstNonEmpty(item.Description, item.Encoded))
 		identifier := podcastFirstNonEmpty(item.GUID, audioURL)
 		episodes = append(episodes, podcastEpisode{
-			ID:          podcastEpisodeID(identifier),
-			Title:       podcastPlainText(item.Title),
-			Description: description,
-			AudioURL:    audioURL,
-			WebsiteURL:  strings.TrimSpace(item.Link),
-			ImageURL:    podcastFirstNonEmpty(item.Image.Href, feedImage),
-			PublishedAt: parsePodcastDate(item.PubDate),
-			Duration:    parsePodcastDuration(item.Duration),
-			Explicit:    podcastExplicit(item.Explicit),
+			ID:           podcastEpisodeID(identifier),
+			Title:        podcastPlainText(item.Title),
+			Description:  description,
+			AudioURL:     audioURL,
+			WebsiteURL:   strings.TrimSpace(item.Link),
+			ImageURL:     podcastFirstNonEmpty(item.Image.Href, feedImage),
+			PublishedAt:  parsePodcastDate(item.PubDate),
+			Duration:     parsePodcastDuration(item.Duration),
+			Explicit:     podcastExplicit(item.Explicit),
+			ChaptersURL:  strings.TrimSpace(item.Chapters.URL),
+			ChaptersType: strings.TrimSpace(item.Chapters.Type),
 		})
 	}
 

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { useAudio } from '../contexts/AudioContext'
 import { Queue } from './Queue'
-import { accountAPI, likedTracksAPI, pluginsAPI, ratingsAPI, UserSession } from '../services/api'
+import { accountAPI, likedTracksAPI, pluginsAPI, podcastsAPI, ratingsAPI, type PodcastChapter, UserSession } from '../services/api'
 import { getTrackArtworkUrl } from '../utils/mediaUrl'
 import { 
   Play, 
@@ -21,7 +21,10 @@ import {
   Monitor,
   Smartphone,
   Cast,
-  MoreHorizontal
+  MoreHorizontal,
+	Rewind,
+	FastForward,
+	Timer
 } from 'lucide-react'
 
 const PlayerContainer = styled.footer`
@@ -420,6 +423,23 @@ const VolumeControl = styled.div`
   padding-left: 4px;
 `
 
+const PodcastOptions = styled.div`
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	font-size: 11px;
+	color: ${({ theme }) => theme.colors.muted};
+
+	select {
+		border: 1px solid ${({ theme }) => theme.colors.border};
+		background: ${({ theme }) => theme.colors.controlBg};
+		color: ${({ theme }) => theme.colors.text};
+		border-radius: 6px;
+		padding: 3px 6px;
+	}
+`
+
 const VolumeSlider = styled.input`
   appearance: none;
   -webkit-appearance: none;
@@ -635,6 +655,7 @@ export const Player: React.FC = () => {
   const [currentSessionId, setCurrentSessionId] = useState('');
   const [connectError, setConnectError] = useState('');
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+	const [podcastChapters, setPodcastChapters] = useState<PodcastChapter[]>([]);
   const previousVolumeRef = useRef(1);
   const connectControlRef = useRef<HTMLDivElement>(null);
   
@@ -650,6 +671,13 @@ export const Player: React.FC = () => {
     previousTrack, 
     setVolume, 
     seekTo, 
+		skipBy,
+		skipBackSeconds,
+		skipForwardSeconds,
+		playbackRate,
+		setPlaybackRate,
+		sleepTimerRemaining,
+		setSleepTimer,
     toggleShuffle, 
     setRepeatMode,
     connectedPlaybackSessionId,
@@ -661,6 +689,8 @@ export const Player: React.FC = () => {
 
   const artworkUrl = getTrackArtworkUrl(currentTrack);
   const isRadioStream = Boolean(currentTrack?.is_external && currentTrack.stream_url && currentTrack.external_kind !== 'podcast');
+  const isPodcast = currentTrack?.external_kind === 'podcast';
+	const currentChapter = podcastChapters.reduce<PodcastChapter | null>((active, chapter) => chapter.startTime <= currentTime ? chapter : active, null);
   const displayDuration = isRadioStream ? duration : (Number.isFinite(duration) && duration > 0 ? duration : currentTrack?.duration || 0);
   const displayTitle = isRadioStream && radioStreamTitle ? radioStreamTitle : currentTrack?.title;
   const displaySubtitle = isRadioStream && radioStreamTitle
@@ -710,6 +740,14 @@ export const Player: React.FC = () => {
       isCurrent = false;
     };
   }, [currentTrack]);
+
+	useEffect(() => {
+		setPodcastChapters([]);
+		if (!currentTrack?.podcast_chapters_url) return;
+		void podcastsAPI.getChapters(currentTrack.podcast_chapters_url)
+			.then(setPodcastChapters)
+			.catch(error => console.error('Failed to load podcast chapters:', error));
+	}, [currentTrack?.podcast_chapters_url]);
 
   useEffect(() => {
     setRadioStreamTitle('');
@@ -966,6 +1004,33 @@ export const Player: React.FC = () => {
 
   const progressPercentage = Number.isFinite(displayDuration) && displayDuration > 0 ? (currentTime / displayDuration) * 100 : 0;
   const volumePercentage = volume * 100;
+	const sleepMinutes = sleepTimerRemaining > 0 ? Math.ceil(sleepTimerRemaining / 60) : 0;
+	const podcastControlButtons = (
+		<>
+			<IconButton onClick={() => skipBy(-skipBackSeconds)} title={`Back ${skipBackSeconds} seconds`}><Rewind size={16} /></IconButton>
+			<ControlButton onClick={previousTrack} disabled={!currentTrack} title="Previous episode"><SkipBack size={20} className="large" /></ControlButton>
+			<ControlButton className="play-button" onClick={togglePlayPause} disabled={!currentTrack} title={isPlaying ? 'Pause' : 'Play'}>
+				{isPlaying ? <Pause size={16} /> : <Play size={16} />}
+			</ControlButton>
+			<ControlButton onClick={nextTrack} disabled={!currentTrack} title="Next episode"><SkipForward size={20} className="large" /></ControlButton>
+			<IconButton onClick={() => skipBy(skipForwardSeconds)} title={`Forward ${skipForwardSeconds} seconds`}><FastForward size={16} /></IconButton>
+		</>
+	);
+	const podcastOptions = (
+		<PodcastOptions>
+			<label>Speed <select aria-label="Podcast playback speed" value={playbackRate} onChange={event => setPlaybackRate(Number(event.target.value))}>
+				{[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3].map(rate => <option key={rate} value={rate}>{rate}x</option>)}
+			</select></label>
+			<Timer size={14} />
+			<select aria-label="Podcast sleep timer" value={sleepMinutes} onChange={event => setSleepTimer(Number(event.target.value) || null)}>
+				<option value={0}>Sleep off</option>
+				{[5, 15, 30, 45, 60].map(minutes => <option key={minutes} value={minutes}>{minutes} min</option>)}
+			</select>
+			{podcastChapters.length > 0 && <select aria-label="Podcast chapter" value={currentChapter?.startTime ?? 0} onChange={event => seekTo(Number(event.target.value))}>
+				{podcastChapters.map(chapter => <option key={`${chapter.startTime}:${chapter.title}`} value={chapter.startTime}>{chapter.title}</option>)}
+			</select>}
+		</PodcastOptions>
+	);
 
   return (
     <PlayerContainer>
@@ -999,6 +1064,7 @@ export const Player: React.FC = () => {
       {/* Player Controls - Centered on mobile */}
       <PlayerControls>
         <ControlButtons>
+		  {isPodcast ? podcastControlButtons : <>
           <IconButton 
             className={`hide-on-mobile ${state.isShuffled ? 'active' : ''}`}
             onClick={toggleShuffle}
@@ -1025,6 +1091,7 @@ export const Player: React.FC = () => {
           >
             <Repeat size={16} />
           </IconButton>
+		  </>}
         </ControlButtons>
         <ProgressBar>
           <Time>{formatTime(currentTime)}</Time>
@@ -1035,6 +1102,7 @@ export const Player: React.FC = () => {
           </ProgressTrack>
           <Time>{formatTime(displayDuration)}</Time>
         </ProgressBar>
+		{isPodcast && podcastOptions}
       </PlayerControls>
 
       {/* Desktop Layout */}
@@ -1086,6 +1154,7 @@ export const Player: React.FC = () => {
 
         <DesktopPlayerControls>
           <ControlButtons>
+			{isPodcast ? podcastControlButtons : <>
             <IconButton 
               className={state.isShuffled ? 'active' : ''} 
               onClick={toggleShuffle}
@@ -1112,6 +1181,7 @@ export const Player: React.FC = () => {
             >
               <Repeat size={16} />
             </IconButton>
+			</>}
           </ControlButtons>
           <ProgressBar>
             <Time>{formatTime(currentTime)}</Time>
@@ -1122,6 +1192,7 @@ export const Player: React.FC = () => {
             </ProgressTrack>
             <Time>{formatTime(displayDuration)}</Time>
           </ProgressBar>
+		  {isPodcast && podcastOptions}
         </DesktopPlayerControls>
 
         <ExtraControls>

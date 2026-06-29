@@ -86,6 +86,8 @@ export interface Music {
   podcast_episode_id?: string
   podcast_description?: string
   podcast_website_url?: string
+	podcast_chapters_url?: string
+	podcast_chapters_type?: string
 }
 
 export interface PluginRowItem {
@@ -266,6 +268,45 @@ export interface PodcastEpisode {
   explicit: boolean
   progress_seconds: number
   completed: boolean
+	chapters_url?: string
+	chapters_type?: string
+}
+
+export interface PodcastSubscription {
+	podcast_id: string
+	title: string
+	publisher: string
+	description: string
+	image_url: string
+	thumbnail_url: string
+	website_url: string
+	feed_url: string
+	auto_download: boolean
+	playback_speed: number
+	subscribed_at: string
+	updated_at: string
+}
+
+export interface PodcastPreferences {
+	default_playback_speed: number
+	skip_back_seconds: number
+	skip_forward_seconds: number
+	auto_delete_played: boolean
+	updated_at?: string
+}
+
+export interface PodcastQueueState {
+	items: Music[]
+	current_index: number
+	position_seconds: number
+	updated_at?: string
+}
+
+export interface PodcastChapter {
+	startTime: number
+	title: string
+	img?: string
+	url?: string
 }
 
 export interface PodcastProgress {
@@ -288,6 +329,7 @@ export interface PodcastProgress {
 export interface PodcastHomeResponse {
   continue_listening: PodcastProgress[]
   top_podcasts: PodcastSearchResult[]
+	subscriptions: PodcastSubscription[]
 }
 
 export interface PodcastEpisodesResponse {
@@ -954,7 +996,7 @@ export const podcastsAPI = {
   getHome: async (): Promise<PodcastHomeResponse> => {
     const country = navigator.language.split('-')[1]?.toLowerCase() || 'us'
     const response = await api.get<APIResponse<PodcastHomeResponse>>('/podcasts/home', { params: { country } })
-    return response.data.data || { continue_listening: [], top_podcasts: [] }
+    return response.data.data || { continue_listening: [], top_podcasts: [], subscriptions: [] }
   },
   search: async (query: string): Promise<PodcastSearchResponse> => {
     const response = await api.get<APIResponse<PodcastSearchResponse>>('/podcasts/search', {
@@ -978,6 +1020,40 @@ export const podcastsAPI = {
     }
     return response.data.data
   },
+	getSubscriptions: async (): Promise<PodcastSubscription[]> => {
+		const response = await api.get<APIResponse<PodcastSubscription[]>>('/podcasts/subscriptions')
+		return response.data.data || []
+	},
+	subscribe: async (subscription: Omit<PodcastSubscription, 'subscribed_at' | 'updated_at'>): Promise<PodcastSubscription> => {
+		const response = await api.post<APIResponse<PodcastSubscription>>('/podcasts/subscriptions', subscription)
+		if (!response.data.data) throw new Error(response.data.error || 'Podcast could not be followed')
+		return response.data.data
+	},
+	unsubscribe: async (podcastId: string): Promise<void> => {
+		await api.delete(`/podcasts/subscriptions/${encodeURIComponent(podcastId)}`)
+	},
+	getPreferences: async (): Promise<PodcastPreferences> => {
+		const response = await api.get<APIResponse<PodcastPreferences>>('/podcasts/preferences')
+		return response.data.data || { default_playback_speed: 1, skip_back_seconds: 15, skip_forward_seconds: 30, auto_delete_played: true }
+	},
+	updatePreferences: async (preferences: PodcastPreferences): Promise<PodcastPreferences> => {
+		const response = await api.put<APIResponse<PodcastPreferences>>('/podcasts/preferences', preferences)
+		if (!response.data.data) throw new Error(response.data.error || 'Podcast preferences could not be saved')
+		return response.data.data
+	},
+	getQueue: async (): Promise<PodcastQueueState> => {
+		const response = await api.get<APIResponse<PodcastQueueState>>('/podcasts/queue')
+		return response.data.data || { items: [], current_index: 0, position_seconds: 0 }
+	},
+	updateQueue: async (queue: PodcastQueueState): Promise<PodcastQueueState> => {
+		const response = await api.put<APIResponse<PodcastQueueState>>('/podcasts/queue', queue)
+		if (!response.data.data) throw new Error(response.data.error || 'Podcast queue could not be saved')
+		return response.data.data
+	},
+	getChapters: async (chaptersUrl: string): Promise<PodcastChapter[]> => {
+		const response = await api.get<APIResponse<{ chapters: PodcastChapter[] }>>('/podcasts/chapters', { params: { url: chaptersUrl } })
+		return response.data.data?.chapters || []
+	},
 }
 
 export const adminUpdateAPI = {

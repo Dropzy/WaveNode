@@ -138,13 +138,16 @@ class WaveNodePlayer private constructor(
         val safeIndex = startIndex.coerceIn(0, playableTracks.lastIndex)
         val track = playableTracks[safeIndex]
         val previousState = _state.value
+        val isPodcastQueue = playableTracks.any { it.externalKind == "podcast" }
+        val shuffleEnabled = if (isPodcastQueue) false else previousState.isShuffleEnabled
+        val repeatMode = if (isPodcastQueue) WaveRepeatMode.Off else previousState.repeatMode
         remoteControlled = false
         remoteProgressUpdatedAtMs = 0L
         currentSession = session
         ContextCompat.startForegroundService(context, Intent(context, WaveNodePlaybackService::class.java))
         httpDataSourceFactory.setDefaultRequestProperties(api.playbackHeaders(session, track))
-        exoPlayer.shuffleModeEnabled = previousState.isShuffleEnabled
-        exoPlayer.repeatMode = previousState.repeatMode.toPlayerRepeatMode()
+        exoPlayer.shuffleModeEnabled = shuffleEnabled
+        exoPlayer.repeatMode = repeatMode.toPlayerRepeatMode()
         exoPlayer.stop()
         exoPlayer.clearMediaItems()
         _state.value = PlayerState(
@@ -153,8 +156,8 @@ class WaveNodePlayer private constructor(
             queue = playableTracks,
             currentIndex = safeIndex,
             positionMs = startPositionMs.coerceAtLeast(0L),
-            isShuffleEnabled = previousState.isShuffleEnabled,
-            repeatMode = previousState.repeatMode,
+            isShuffleEnabled = shuffleEnabled,
+            repeatMode = repeatMode,
         )
         exoPlayer.setMediaItems(playableTracks.map { mediaItem(session, it) }, safeIndex, startPositionMs.coerceAtLeast(0L))
         exoPlayer.prepare()
