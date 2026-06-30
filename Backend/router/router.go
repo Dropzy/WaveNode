@@ -48,6 +48,8 @@ type Router struct {
 	setupToken        string
 	subsonicAuthCache sync.Map
 	playbackHandoffs  sync.Map
+	castTokens        sync.Map
+	outputDevices     sync.Map
 	corsConfig        struct {
 		AllowedOrigins []string `json:"allowed_origins"`
 		AllowedMethods []string `json:"allowed_methods"`
@@ -123,6 +125,7 @@ func (r *Router) SetupRoutes() *mux.Router {
 	setupRateLimit := middleware.LoginRateLimit(20, 5*time.Minute)
 	public.Handle("/setup/directories", setupRateLimit(http.HandlerFunc(r.browseSetupDirectories))).Methods("GET", "OPTIONS")
 	public.Handle("/setup/complete", setupRateLimit(http.HandlerFunc(r.completeSetup))).Methods("POST", "OPTIONS")
+	public.HandleFunc("/cast/{token}/music/{id}", r.streamCastMusic).Methods("GET", "HEAD", "OPTIONS")
 
 	// Protected routes (authentication required)
 	protected := router.PathPrefix("/api").Subrouter()
@@ -168,6 +171,9 @@ func (r *Router) SetupRoutes() *mux.Router {
 	protected.HandleFunc("/playback-profile", r.updatePlaybackProfile).Methods("PUT", "OPTIONS")
 	protected.HandleFunc("/playback/connect", r.createPlaybackHandoff).Methods("POST", "OPTIONS")
 	protected.HandleFunc("/playback/connect/pending", r.consumePlaybackHandoff).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/outputs/cast-url", r.createCastURL).Methods("POST", "OPTIONS")
+	protected.HandleFunc("/outputs/devices", r.discoverOutputDevices).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/outputs/dlna/play", r.playOnDLNADevice).Methods("POST", "OPTIONS")
 	protected.HandleFunc("/scrobble/settings", r.getScrobbleSettings).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/scrobble/settings", r.updateScrobbleSettings).Methods("PUT", "OPTIONS")
 	protected.HandleFunc("/scrobble/lastfm/start", r.startLastFMAuth).Methods("POST", "OPTIONS")

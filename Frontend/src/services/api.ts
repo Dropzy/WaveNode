@@ -349,6 +349,17 @@ export interface UserSession {
   revoked_at?: string
 }
 
+export interface OutputDevice {
+	id: string
+	name: string
+	protocol: 'dlna'
+}
+
+export interface CastURL {
+	url: string
+	expires_at: string
+}
+
 export interface PlaybackHandoffCommand {
   id: string
   source_session_id: string
@@ -1053,6 +1064,23 @@ export const podcastsAPI = {
 	getChapters: async (chaptersUrl: string): Promise<PodcastChapter[]> => {
 		const response = await api.get<APIResponse<{ chapters: PodcastChapter[] }>>('/podcasts/chapters', { params: { url: chaptersUrl } })
 		return response.data.data?.chapters || []
+	},
+}
+
+export const outputsAPI = {
+	createCastURL: async (trackId: string): Promise<CastURL> => {
+		const response = await api.post<APIResponse<CastURL>>('/outputs/cast-url', { track_id: trackId })
+		if (!response.data.data) throw new Error(response.data.error || 'Could not prepare cast playback')
+		return response.data.data
+	},
+	discoverDevices: async (): Promise<OutputDevice[]> => {
+		const response = await api.get<APIResponse<OutputDevice[]>>('/outputs/devices')
+		return response.data.data || []
+	},
+	playDLNA: async (deviceId: string, mediaUrl: string, title: string): Promise<OutputDevice> => {
+		const response = await api.post<APIResponse<OutputDevice>>('/outputs/dlna/play', { device_id: deviceId, media_url: mediaUrl, title })
+		if (!response.data.data) throw new Error(response.data.error || 'Could not play on renderer')
+		return response.data.data
 	},
 }
 

@@ -34,6 +34,7 @@ data class PlayerState(
     val durationMs: Long = 0L,
     val isShuffleEnabled: Boolean = false,
     val repeatMode: WaveRepeatMode = WaveRepeatMode.Off,
+	val playbackSpeed: Float = 1f,
 )
 
 enum class WaveRepeatMode {
@@ -158,9 +159,11 @@ class WaveNodePlayer private constructor(
             positionMs = startPositionMs.coerceAtLeast(0L),
             isShuffleEnabled = shuffleEnabled,
             repeatMode = repeatMode,
+			playbackSpeed = if (isPodcastQueue) previousState.playbackSpeed else 1f,
         )
         exoPlayer.setMediaItems(playableTracks.map { mediaItem(session, it) }, safeIndex, startPositionMs.coerceAtLeast(0L))
         exoPlayer.prepare()
+		exoPlayer.setPlaybackSpeed(_state.value.playbackSpeed)
         exoPlayer.play()
     }
 
@@ -248,6 +251,18 @@ class WaveNodePlayer private constructor(
         exoPlayer.seekTo(positionMs.coerceAtLeast(0L))
         updatePlaybackProgress()
     }
+
+	fun seekBy(offsetMs: Long) {
+		val duration = normalizedDuration()
+		val maximum = if (duration > 0L) duration else Long.MAX_VALUE
+		seekTo((exoPlayer.currentPosition + offsetMs).coerceIn(0L, maximum))
+	}
+
+	fun setPlaybackSpeed(speed: Float) {
+		val safeSpeed = speed.coerceIn(0.5f, 3f)
+		exoPlayer.setPlaybackSpeed(safeSpeed)
+		_state.value = _state.value.copy(playbackSpeed = safeSpeed)
+	}
 
     fun setAppVisible(isVisible: Boolean) {
         appVisible = isVisible

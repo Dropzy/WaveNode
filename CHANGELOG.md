@@ -26,6 +26,20 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Optional internet deployment with automatic HTTPS certificates through Caddy.
 - First-run setup access codes for preventing remote administrator-account claims.
 
+## 0.1.3 - 2026-06-30
+
+### Added
+
+- Chromecast output on web and Android, AirPlay output in supported Apple browsers, and DLNA/UPnP renderer discovery and playback.
+- Secure, expiring receiver stream URLs for playing authenticated library tracks on household devices.
+- Android podcast subscriptions, offline downloads, sleep timers, playback speed, configurable skip intervals, sharing, notes, and queue controls.
+
+### Fixed
+
+- Android landscape layouts and podcast-specific transport controls.
+- Web podcast controls, sleep-timer option contrast, and containment within the desktop player bar.
+- Cast handoff now pauses local playback only after the receiver accepts the media.
+
 ## 0.1.2 - 2026-06-28
 
 ### Fixed

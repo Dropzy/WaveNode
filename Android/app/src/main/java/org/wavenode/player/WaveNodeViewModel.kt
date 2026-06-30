@@ -15,10 +15,14 @@ import org.wavenode.player.data.Album
 import org.wavenode.player.data.Artist
 import org.wavenode.player.data.DiscoveredServer
 import org.wavenode.player.data.Playlist
+import org.wavenode.player.data.OutputDevice
 import org.wavenode.player.data.Podcast
 import org.wavenode.player.data.PodcastEpisode
+import org.wavenode.player.data.PodcastDownloadStore
 import org.wavenode.player.data.PodcastHomeResponse
+import org.wavenode.player.data.PodcastPreferences
 import org.wavenode.player.data.PodcastProgress
+import org.wavenode.player.data.PodcastSubscription
 import org.wavenode.player.data.PluginHomeRow
 import org.wavenode.player.data.SavedSession
 import org.wavenode.player.data.ServerDiscovery
@@ -28,6 +32,7 @@ import org.wavenode.player.data.UserSession
 import org.wavenode.player.data.WaveNodeApi
 import org.wavenode.player.playback.PlayerState
 import org.wavenode.player.playback.WaveNodePlayer
+import org.wavenode.player.playback.WaveNodeCastController
 import java.time.Duration
 import java.time.Instant
 
@@ -45,6 +50,10 @@ data class AppState(
     val podcastHome: PodcastHomeResponse = PodcastHomeResponse(),
     val isLoadingPodcastHome: Boolean = false,
     val podcastHomeError: String? = null,
+	val podcastPreferences: PodcastPreferences = PodcastPreferences(),
+	val downloadedPodcastEpisodeIds: Set<String> = emptySet(),
+	val downloadingPodcastEpisodeIds: Set<String> = emptySet(),
+	val sleepTimerRemainingSeconds: Int = 0,
     val discoveredServers: List<DiscoveredServer> = emptyList(),
     val connectSessions: List<UserSession> = emptyList(),
     val currentSessionId: String = "",
@@ -52,6 +61,8 @@ data class AppState(
     val connectedPlaybackDeviceName: String = "",
     val isLoadingConnectSessions: Boolean = false,
     val connectMessage: String? = null,
+	val outputDevices: List<OutputDevice> = emptyList(),
+	val isLoadingOutputDevices: Boolean = false,
     val activeDetail: LibraryDetail? = null,
     val isDetailLoading: Boolean = false,
     val detailError: String? = null,
@@ -72,6 +83,8 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
     private val serverDiscovery = ServerDiscovery()
     private val sessionStore = SessionStore(application)
     private val player = WaveNodePlayer.get(application, api)
+    private val podcastDownloads = PodcastDownloadStore(application)
+	private val castController by lazy { runCatching { WaveNodeCastController.get(application) }.getOrNull() }
 
     private val _state = MutableStateFlow(AppState(session = sessionStore.load()))
     val state: StateFlow<AppState> = _state.asStateFlow()
@@ -82,14 +95,17 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
     private var lastPodcastSnapshot: PlayerState? = null
     private var lastPodcastReportKey = ""
     private var lastPodcastReportPosition = -1
+	private var sleepTimerJob: Job? = null
 
     init {
         if (_state.value.session != null) {
             refreshTracks()
             refreshPodcastHome()
+			refreshPodcastPreferences()
         } else {
             discoverServers()
         }
+		_state.value = _state.value.copy(downloadedPodcastEpisodeIds = podcastDownloads.downloadedEpisodeIds())
         viewModelScope.launch {
             playerState.collect { state ->
                 if (state.isPlaying) {
@@ -320,6 +336,9 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                         isLoadingPodcastHome = false,
                         podcastHomeError = null,
                     )
+					home.subscriptions.filter { it.autoDownload }.take(10).forEach { subscription ->
+						autoDownloadLatestEpisode(session, subscription)
+					}
                 }
                 .onFailure { error ->
                     _state.value = _state.value.copy(
@@ -329,6 +348,116 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                 }
         }
     }
+
+	private fun autoDownloadLatestEpisode(session: SavedSession, subscription: PodcastSubscription) {
+		viewModelScope.launch {
+			runCatching { api.getPodcastEpisodes(session, subscription.podcastId) }
+				.onSuccess { detail -> detail.episodes.firstOrNull()?.let { downloadPodcastEpisode(detail.podcast, it) } }
+				.onFailure { error -> Log.w("WaveNode", "Could not auto-download ${subscription.title}", error) }
+		}
+	}
+
+	fun refreshPodcastPreferences() {
+		val session = _state.value.session ?: return
+		viewModelScope.launch {
+			runCatching { api.getPodcastPreferences(session) }
+				.onSuccess { preferences ->
+					_state.value = _state.value.copy(podcastPreferences = preferences)
+					if (playerState.value.currentTrack?.externalKind == "podcast") {
+						player.setPlaybackSpeed(preferences.defaultPlaybackSpeed)
+					}
+				}
+				.onFailure { error -> Log.w("WaveNode", "Could not load podcast preferences", error) }
+		}
+	}
+
+	fun togglePodcastSubscription(podcast: Podcast, autoDownload: Boolean) {
+		val session = _state.value.session ?: return
+		val existing = _state.value.podcastHome.subscriptions.firstOrNull { it.podcastId == podcast.id }
+		viewModelScope.launch {
+			if (existing != null) {
+				runCatching { api.deletePodcastSubscription(session, podcast.id) }
+					.onSuccess {
+						_state.value = _state.value.copy(
+							podcastHome = _state.value.podcastHome.copy(
+								subscriptions = _state.value.podcastHome.subscriptions.filterNot { it.podcastId == podcast.id },
+							),
+						)
+					}
+					.onFailure { error -> _state.value = _state.value.copy(detailError = error.message ?: "Could not unfollow podcast") }
+				return@launch
+			}
+			val subscription = PodcastSubscription(
+				podcastId = podcast.id,
+				title = podcast.title,
+				publisher = podcast.publisher,
+				description = podcast.description,
+				imageUrl = podcast.imageUrl,
+				thumbnailUrl = podcast.thumbnailUrl,
+				websiteUrl = podcast.websiteUrl,
+				feedUrl = podcast.feedUrl,
+				autoDownload = autoDownload,
+				playbackSpeed = _state.value.podcastPreferences.defaultPlaybackSpeed,
+			)
+			runCatching { api.savePodcastSubscription(session, subscription) }
+				.onSuccess { saved ->
+					_state.value = _state.value.copy(
+						podcastHome = _state.value.podcastHome.copy(
+							subscriptions = listOf(saved) + _state.value.podcastHome.subscriptions.filterNot { it.podcastId == saved.podcastId },
+						),
+					)
+					if (saved.autoDownload) {
+						val active = _state.value.activeDetail as? LibraryDetail.PodcastPage
+						active?.episodes?.firstOrNull()?.let { downloadPodcastEpisode(active.podcast, it) }
+					}
+				}
+				.onFailure { error -> _state.value = _state.value.copy(detailError = error.message ?: "Could not follow podcast") }
+		}
+	}
+
+	fun updatePodcastAutoDownload(podcast: Podcast, enabled: Boolean) {
+		val session = _state.value.session ?: return
+		val existing = _state.value.podcastHome.subscriptions.firstOrNull { it.podcastId == podcast.id } ?: return
+		viewModelScope.launch {
+			runCatching { api.savePodcastSubscription(session, existing.copy(autoDownload = enabled)) }
+				.onSuccess { saved ->
+					_state.value = _state.value.copy(podcastHome = _state.value.podcastHome.copy(
+						subscriptions = _state.value.podcastHome.subscriptions.map { if (it.podcastId == saved.podcastId) saved else it },
+					))
+					if (saved.autoDownload) {
+						val active = _state.value.activeDetail as? LibraryDetail.PodcastPage
+						active?.episodes?.firstOrNull()?.let { downloadPodcastEpisode(active.podcast, it) }
+					}
+				}
+				.onFailure { error -> _state.value = _state.value.copy(detailError = error.message ?: "Could not update auto-download") }
+		}
+	}
+
+	fun downloadPodcastEpisode(podcast: Podcast, episode: PodcastEpisode) {
+		val track = episode.toTrack(podcast)
+		if (track.id in _state.value.downloadedPodcastEpisodeIds || track.id in _state.value.downloadingPodcastEpisodeIds) return
+		_state.value = _state.value.copy(downloadingPodcastEpisodeIds = _state.value.downloadingPodcastEpisodeIds + track.id)
+		viewModelScope.launch {
+			runCatching { podcastDownloads.download(track) }
+				.onSuccess {
+					_state.value = _state.value.copy(
+						downloadedPodcastEpisodeIds = podcastDownloads.downloadedEpisodeIds(),
+						downloadingPodcastEpisodeIds = _state.value.downloadingPodcastEpisodeIds - track.id,
+					)
+				}
+				.onFailure { error ->
+					_state.value = _state.value.copy(
+						downloadingPodcastEpisodeIds = _state.value.downloadingPodcastEpisodeIds - track.id,
+						detailError = error.message ?: "Episode download failed",
+					)
+				}
+		}
+	}
+
+	fun deletePodcastDownload(trackId: String) {
+		podcastDownloads.delete(trackId)
+		_state.value = _state.value.copy(downloadedPodcastEpisodeIds = podcastDownloads.downloadedEpisodeIds())
+	}
 
     fun openPodcast(podcast: Podcast) {
         val session = _state.value.session ?: return
@@ -344,6 +473,9 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                         activeDetail = LibraryDetail.PodcastPage(detail.podcast, detail.episodes),
                         isDetailLoading = false,
                     )
+					if (_state.value.podcastHome.subscriptions.firstOrNull { it.podcastId == detail.podcast.id }?.autoDownload == true) {
+						detail.episodes.firstOrNull()?.let { downloadPodcastEpisode(detail.podcast, it) }
+					}
                 }
                 .onFailure { error ->
                     _state.value = _state.value.copy(
@@ -548,7 +680,9 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
 
     fun playFromHere(track: Track, queue: List<Track>) {
         val session = _state.value.session ?: return
-        val playableQueue = queue.ifEmpty { listOf(track) }
+		val playableQueue = queue.ifEmpty { listOf(track) }.map { candidate ->
+			if (candidate.externalKind == "podcast") podcastDownloads.withLocalAudio(candidate) else candidate
+		}
         val startIndex = playableQueue.indexOfFirst { it.id == track.id }.takeIf { it >= 0 } ?: 0
         val isPodcastQueue = playableQueue.any { it.externalKind == "podcast" }
         if (_state.value.connectedPlaybackSessionId.isNotBlank() && !isPodcastQueue) {
@@ -565,6 +699,12 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
         val startPositionMs = track.takeIf { it.externalKind == "podcast" && !it.podcastCompleted }
             ?.podcastProgressSeconds?.toLong()?.times(1000L) ?: 0L
         player.playQueue(session, playableQueue, startIndex, startPositionMs)
+		if (isPodcastQueue) {
+			val podcastId = playableQueue[startIndex].podcastId
+			val speed = _state.value.podcastHome.subscriptions.firstOrNull { it.podcastId == podcastId }?.playbackSpeed
+				?: _state.value.podcastPreferences.defaultPlaybackSpeed
+			player.setPlaybackSpeed(speed)
+		}
         recordPlay(track)
         refreshRadioMetadata(track)
     }
@@ -689,6 +829,54 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
         player.seekTo(positionMs)
     }
 
+	fun skipPodcastBack() {
+		player.seekBy(-_state.value.podcastPreferences.skipBackSeconds * 1_000L)
+	}
+
+	fun skipPodcastForward() {
+		player.seekBy(_state.value.podcastPreferences.skipForwardSeconds * 1_000L)
+	}
+
+	fun setPodcastPlaybackSpeed(speed: Float) {
+		player.setPlaybackSpeed(speed)
+		val session = _state.value.session ?: return
+		val preferences = _state.value.podcastPreferences.copy(defaultPlaybackSpeed = speed.coerceIn(0.5f, 3f))
+		_state.value = _state.value.copy(podcastPreferences = preferences)
+		viewModelScope.launch {
+			runCatching { api.updatePodcastPreferences(session, preferences) }
+				.onSuccess { saved -> _state.value = _state.value.copy(podcastPreferences = saved) }
+				.onFailure { error -> Log.w("WaveNode", "Could not save podcast speed", error) }
+		}
+	}
+
+	fun setPodcastSleepTimer(minutes: Int?) {
+		sleepTimerJob?.cancel()
+		if (minutes == null || minutes <= 0) {
+			_state.value = _state.value.copy(sleepTimerRemainingSeconds = 0)
+			return
+		}
+		startSleepTimer(minutes * 60)
+	}
+
+	fun setPodcastSleepTimerToEpisodeEnd() {
+		val playback = playerState.value
+		val duration = playback.durationMs.takeIf { it > 0 } ?: playback.currentTrack?.duration?.times(1_000L) ?: 0L
+		val remaining = ((duration - playback.positionMs).coerceAtLeast(0L) / 1_000L).toInt()
+		if (remaining > 0) startSleepTimer(remaining)
+	}
+
+	private fun startSleepTimer(seconds: Int) {
+		sleepTimerJob?.cancel()
+		sleepTimerJob = viewModelScope.launch {
+			for (remaining in seconds downTo 1) {
+				_state.value = _state.value.copy(sleepTimerRemainingSeconds = remaining)
+				delay(1_000)
+			}
+			player.pause()
+			_state.value = _state.value.copy(sleepTimerRemainingSeconds = 0)
+		}
+	}
+
     fun setAppVisible(isVisible: Boolean) {
         if (!isVisible) {
             reportPodcastProgress(playerState.value, force = true)
@@ -727,7 +915,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                         episodeTitle = track.title,
                         description = track.podcastDescription,
                         imageUrl = track.imageUrl,
-                        audioUrl = track.streamUrl,
+                        audioUrl = track.podcastAudioUrl.ifBlank { track.streamUrl },
                         websiteUrl = track.podcastWebsiteUrl,
                         publishedAt = track.releaseDate,
                         durationSeconds = duration,
@@ -743,6 +931,9 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun applyPodcastProgress(saved: PodcastProgress) {
+		if (saved.completed && _state.value.podcastPreferences.autoDeletePlayed) {
+			podcastDownloads.delete("podcast:${saved.podcastId}:${saved.episodeId}")
+		}
         val current = _state.value
         val remaining = current.podcastHome.continueListening.filterNot {
             it.podcastId == saved.podcastId && it.episodeId == saved.episodeId
@@ -764,6 +955,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
         _state.value = current.copy(
             podcastHome = current.podcastHome.copy(continueListening = updatedContinue),
             activeDetail = detail,
+			downloadedPodcastEpisodeIds = podcastDownloads.downloadedEpisodeIds(),
         )
     }
 
@@ -802,6 +994,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
 
     fun refreshConnectSessions() {
         val session = _state.value.session ?: return
+		refreshOutputDevices()
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoadingConnectSessions = true, connectMessage = null)
             runCatching { api.getSessions(session) }
@@ -821,6 +1014,55 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                 }
         }
     }
+
+	private fun refreshOutputDevices() {
+		val session = _state.value.session ?: return
+		viewModelScope.launch {
+			_state.value = _state.value.copy(isLoadingOutputDevices = true)
+			runCatching { api.discoverOutputDevices(session) }
+				.onSuccess { devices -> _state.value = _state.value.copy(outputDevices = devices, isLoadingOutputDevices = false) }
+				.onFailure { _state.value = _state.value.copy(outputDevices = emptyList(), isLoadingOutputDevices = false) }
+		}
+	}
+
+	fun prepareGoogleCast() {
+		val session = _state.value.session ?: return
+		val playback = playerState.value
+		val track = playback.currentTrack ?: run {
+			_state.value = _state.value.copy(connectMessage = "Choose something to play first")
+			return
+		}
+		viewModelScope.launch {
+			runCatching {
+				val mediaURL = if (track.isExternal) track.podcastAudioUrl.ifBlank { track.streamUrl } else api.createCastURL(session, track.id).url
+				if (!mediaURL.startsWith("http")) throw IllegalStateException("This download is only available on this phone")
+				val controller = castController ?: throw IllegalStateException("Google Cast is unavailable on this device")
+				controller.prepare(track, mediaURL, playback.positionMs) { player.pause() }
+			}
+				.onFailure { error -> _state.value = _state.value.copy(connectMessage = error.message ?: "Could not prepare Google Cast") }
+		}
+	}
+
+	fun playOnOutputDevice(deviceId: String) {
+		val session = _state.value.session ?: return
+		val playback = playerState.value
+		val track = playback.currentTrack ?: run {
+			_state.value = _state.value.copy(connectMessage = "Choose something to play first")
+			return
+		}
+		viewModelScope.launch {
+			_state.value = _state.value.copy(connectMessage = null)
+			runCatching {
+				val mediaURL = if (track.isExternal) track.podcastAudioUrl.ifBlank { track.streamUrl } else api.createCastURL(session, track.id).url
+				api.playOnDLNADevice(session, deviceId, mediaURL, track.title)
+			}
+				.onSuccess { device ->
+					player.pause()
+					_state.value = _state.value.copy(connectMessage = "Playing on ${device.name.ifBlank { "DLNA renderer" }}")
+				}
+				.onFailure { error -> _state.value = _state.value.copy(connectMessage = error.message ?: "Could not play on renderer") }
+		}
+	}
 
     fun connectPlaybackTo(sessionId: String) {
         val session = _state.value.session ?: return
@@ -966,6 +1208,7 @@ private fun PodcastEpisode.toTrack(podcast: Podcast): Track {
         releaseDate = publishedAt,
         imageUrl = imageUrl.ifBlank { podcast.imageUrl.ifBlank { podcast.thumbnailUrl } },
         streamUrl = audioUrl,
+		podcastAudioUrl = audioUrl,
         isExternal = true,
         externalKind = "podcast",
         podcastId = podcast.id,
@@ -974,6 +1217,7 @@ private fun PodcastEpisode.toTrack(podcast: Podcast): Track {
         podcastEpisodeId = id,
         podcastDescription = description,
         podcastWebsiteUrl = websiteUrl.ifBlank { podcast.websiteUrl },
+		podcastChaptersUrl = chaptersUrl,
         podcastProgressSeconds = progressSeconds,
         podcastCompleted = completed,
         createdAt = publishedAt,
@@ -991,6 +1235,7 @@ private fun PodcastProgress.toTrack(): Track {
         releaseDate = publishedAt,
         imageUrl = imageUrl,
         streamUrl = audioUrl,
+		podcastAudioUrl = audioUrl,
         isExternal = true,
         externalKind = "podcast",
         podcastId = podcastId,

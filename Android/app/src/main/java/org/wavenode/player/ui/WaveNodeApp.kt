@@ -2,6 +2,7 @@ package org.wavenode.player.ui
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.AudioDeviceInfo
@@ -38,6 +39,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.Sort
@@ -50,6 +52,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Groups
@@ -72,6 +76,10 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Forward30
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -92,6 +100,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -112,6 +121,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.mediarouter.app.MediaRouteButton
+import com.google.android.gms.cast.framework.CastButtonFactory
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -129,9 +141,12 @@ import org.wavenode.player.data.Artist
 import org.wavenode.player.data.DiscoveredServer
 import org.wavenode.player.data.Playlist
 import org.wavenode.player.data.Podcast
+import org.wavenode.player.data.OutputDevice
 import org.wavenode.player.data.PodcastEpisode
 import org.wavenode.player.data.PodcastHomeResponse
 import org.wavenode.player.data.PodcastProgress
+import org.wavenode.player.data.PodcastPreferences
+import org.wavenode.player.data.PodcastSubscription
 import org.wavenode.player.data.PluginHomeRow
 import org.wavenode.player.data.PluginRowItem
 import org.wavenode.player.data.SavedSession
@@ -187,6 +202,10 @@ fun WaveNodeApp(
     onPodcastQueryChange: (String) -> Unit,
     onOpenPodcast: (Podcast) -> Unit,
     onResumePodcast: (PodcastProgress) -> Unit,
+	onTogglePodcastSubscription: (Podcast, Boolean) -> Unit,
+	onUpdatePodcastAutoDownload: (Podcast, Boolean) -> Unit,
+	onDownloadPodcastEpisode: (Podcast, PodcastEpisode) -> Unit,
+	onDeletePodcastDownload: (String) -> Unit,
     onCloseDetail: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onToggleShuffle: () -> Unit,
@@ -194,8 +213,15 @@ fun WaveNodeApp(
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSeekTo: (Long) -> Unit,
+	onSkipPodcastBack: () -> Unit,
+	onSkipPodcastForward: () -> Unit,
+	onSetPodcastPlaybackSpeed: (Float) -> Unit,
+	onSetPodcastSleepTimer: (Int?) -> Unit,
+	onSetPodcastSleepTimerToEpisodeEnd: () -> Unit,
     onRefreshConnectSessions: () -> Unit,
     onConnectPlaybackTo: (String) -> Unit,
+	onPrepareGoogleCast: () -> Unit,
+	onPlayOnOutputDevice: (String) -> Unit,
     onAddTracksToPlaylist: (List<Track>, Playlist) -> Unit,
     onCreatePlaylist: (String, String) -> Unit,
     onCreatePlaylistWithTracks: (String, String, List<Track>) -> Unit,
@@ -228,6 +254,10 @@ fun WaveNodeApp(
             onPodcastQueryChange = onPodcastQueryChange,
             onOpenPodcast = onOpenPodcast,
             onResumePodcast = onResumePodcast,
+			onTogglePodcastSubscription = onTogglePodcastSubscription,
+			onUpdatePodcastAutoDownload = onUpdatePodcastAutoDownload,
+			onDownloadPodcastEpisode = onDownloadPodcastEpisode,
+			onDeletePodcastDownload = onDeletePodcastDownload,
             onCloseDetail = onCloseDetail,
             onTogglePlayPause = onTogglePlayPause,
             onToggleShuffle = onToggleShuffle,
@@ -235,8 +265,15 @@ fun WaveNodeApp(
             onSkipNext = onSkipNext,
             onSkipPrevious = onSkipPrevious,
             onSeekTo = onSeekTo,
+			onSkipPodcastBack = onSkipPodcastBack,
+			onSkipPodcastForward = onSkipPodcastForward,
+			onSetPodcastPlaybackSpeed = onSetPodcastPlaybackSpeed,
+			onSetPodcastSleepTimer = onSetPodcastSleepTimer,
+			onSetPodcastSleepTimerToEpisodeEnd = onSetPodcastSleepTimerToEpisodeEnd,
             onRefreshConnectSessions = onRefreshConnectSessions,
             onConnectPlaybackTo = onConnectPlaybackTo,
+			onPrepareGoogleCast = onPrepareGoogleCast,
+			onPlayOnOutputDevice = onPlayOnOutputDevice,
             onAddTracksToPlaylist = onAddTracksToPlaylist,
             onCreatePlaylist = onCreatePlaylist,
             onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
@@ -425,6 +462,10 @@ private fun MainShell(
     onPodcastQueryChange: (String) -> Unit,
     onOpenPodcast: (Podcast) -> Unit,
     onResumePodcast: (PodcastProgress) -> Unit,
+	onTogglePodcastSubscription: (Podcast, Boolean) -> Unit,
+	onUpdatePodcastAutoDownload: (Podcast, Boolean) -> Unit,
+	onDownloadPodcastEpisode: (Podcast, PodcastEpisode) -> Unit,
+	onDeletePodcastDownload: (String) -> Unit,
     onCloseDetail: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onToggleShuffle: () -> Unit,
@@ -432,8 +473,15 @@ private fun MainShell(
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSeekTo: (Long) -> Unit,
+	onSkipPodcastBack: () -> Unit,
+	onSkipPodcastForward: () -> Unit,
+	onSetPodcastPlaybackSpeed: (Float) -> Unit,
+	onSetPodcastSleepTimer: (Int?) -> Unit,
+	onSetPodcastSleepTimerToEpisodeEnd: () -> Unit,
     onRefreshConnectSessions: () -> Unit,
     onConnectPlaybackTo: (String) -> Unit,
+	onPrepareGoogleCast: () -> Unit,
+	onPlayOnOutputDevice: (String) -> Unit,
     onAddTracksToPlaylist: (List<Track>, Playlist) -> Unit,
     onCreatePlaylist: (String, String) -> Unit,
     onCreatePlaylistWithTracks: (String, String, List<Track>) -> Unit,
@@ -653,6 +701,13 @@ private fun MainShell(
                     albumArtworkUrl = albumArtworkUrl,
                     artistArtworkUrl = artistArtworkUrl,
                     onOpenAlbum = onOpenAlbum,
+					podcastSubscriptions = state.podcastHome.subscriptions,
+					downloadedPodcastEpisodeIds = state.downloadedPodcastEpisodeIds,
+					downloadingPodcastEpisodeIds = state.downloadingPodcastEpisodeIds,
+					onTogglePodcastSubscription = onTogglePodcastSubscription,
+					onUpdatePodcastAutoDownload = onUpdatePodcastAutoDownload,
+					onDownloadPodcastEpisode = onDownloadPodcastEpisode,
+					onDeletePodcastDownload = onDeletePodcastDownload,
                 )
             } else when (activeTab) {
                 WaveTab.Home -> HomeScreen(
@@ -773,6 +828,17 @@ private fun MainShell(
             connectMessage = state.connectMessage,
             onRefreshConnectSessions = onRefreshConnectSessions,
             onConnectPlaybackTo = onConnectPlaybackTo,
+			onPrepareGoogleCast = onPrepareGoogleCast,
+			onPlayOnOutputDevice = onPlayOnOutputDevice,
+			outputDevices = state.outputDevices,
+			isLoadingOutputDevices = state.isLoadingOutputDevices,
+			podcastPreferences = state.podcastPreferences,
+			sleepTimerRemainingSeconds = state.sleepTimerRemainingSeconds,
+			onSkipPodcastBack = onSkipPodcastBack,
+			onSkipPodcastForward = onSkipPodcastForward,
+			onSetPodcastPlaybackSpeed = onSetPodcastPlaybackSpeed,
+			onSetPodcastSleepTimer = onSetPodcastSleepTimer,
+			onSetPodcastSleepTimerToEpisodeEnd = onSetPodcastSleepTimerToEpisodeEnd,
         )
     }
 
@@ -1222,6 +1288,26 @@ private fun LibraryScreen(
                                 }
                             }
                         }
+						if (podcastHome.subscriptions.isNotEmpty()) {
+							item { SectionHeader("Following", null) }
+							item {
+								LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(start = 16.dp)) {
+									items(podcastHome.subscriptions, key = { it.podcastId }) { subscription ->
+										val podcast = Podcast(
+											id = subscription.podcastId,
+											title = subscription.title,
+											publisher = subscription.publisher,
+											description = subscription.description,
+											imageUrl = subscription.imageUrl,
+											thumbnailUrl = subscription.thumbnailUrl,
+											websiteUrl = subscription.websiteUrl,
+											feedUrl = subscription.feedUrl,
+										)
+										PodcastHomeCard(podcast = podcast, onClick = { onOpenPodcast(podcast) })
+									}
+								}
+							}
+						}
                         item { SectionHeader("Top podcasts", null) }
                         if (podcastHome.topPodcasts.isEmpty()) {
                             item { EmptyLibraryMessage(podcastHomeError ?: "Top podcasts are temporarily unavailable.") }
@@ -1894,9 +1980,15 @@ private fun TrackRow(
     onCreatePlaylistWithTracks: (String, String, List<Track>) -> Unit = { _, _, _ -> },
     playbackPositionMs: Long = 0L,
     playbackDurationMs: Long = 0L,
+	isDownloaded: Boolean = false,
+	isDownloading: Boolean = false,
+	onDownload: (() -> Unit)? = null,
+	onDeleteDownload: () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var showPlaylistPicker by remember { mutableStateOf(false) }
+	var showEpisodeNotes by remember { mutableStateOf(false) }
+	val context = LocalContext.current
     val editablePlaylists = remember(playlists) {
         playlists.filter { it.id.isNotBlank() && !it.type.equals("smart", ignoreCase = true) }
     }
@@ -1990,6 +2082,36 @@ private fun TrackRow(
                         showPlaylistPicker = true
                     },
                 )
+				if (track.externalKind == "podcast" && onDownload != null) {
+					DropdownMenuItem(
+						text = { Text(if (isDownloading) "Downloading..." else if (isDownloaded) "Remove download" else "Download episode", color = WaveText) },
+						leadingIcon = { Icon(if (isDownloaded) Icons.Default.Delete else Icons.Default.Download, contentDescription = null, tint = WaveAccent) },
+						enabled = !isDownloading,
+						onClick = {
+							menuOpen = false
+							if (isDownloaded) onDeleteDownload() else onDownload()
+						},
+					)
+					DropdownMenuItem(
+						text = { Text("Episode notes", color = WaveText) },
+						leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = null, tint = WaveAccent) },
+						enabled = track.podcastDescription.isNotBlank(),
+						onClick = { menuOpen = false; showEpisodeNotes = true },
+					)
+					DropdownMenuItem(
+						text = { Text("Share episode", color = WaveText) },
+						leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, tint = WaveAccent) },
+						onClick = {
+							menuOpen = false
+							val intent = Intent(Intent.ACTION_SEND).apply {
+								type = "text/plain"
+								putExtra(Intent.EXTRA_SUBJECT, track.title)
+								putExtra(Intent.EXTRA_TEXT, track.podcastWebsiteUrl.ifBlank { track.podcastAudioUrl.ifBlank { track.streamUrl } })
+							}
+							context.startActivity(Intent.createChooser(intent, "Share episode"))
+						},
+					)
+				}
             }
         }
     }
@@ -2002,6 +2124,17 @@ private fun TrackRow(
             onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
         )
     }
+	if (showEpisodeNotes) {
+		Dialog(onDismissRequest = { showEpisodeNotes = false }) {
+			Surface(color = WaveSurface, shape = RoundedCornerShape(8.dp)) {
+				Column(modifier = Modifier.padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+					Text(track.title, color = WaveText, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+					Text(track.podcastDescription, color = WaveSubtle)
+					TextButton(onClick = { showEpisodeNotes = false }) { Text("Close") }
+				}
+			}
+		}
+	}
 }
 
 @Composable
@@ -2280,6 +2413,13 @@ private fun LibraryDetailScreen(
     albumArtworkUrl: (Album) -> String?,
     artistArtworkUrl: (Artist) -> String?,
     onOpenAlbum: (Album) -> Unit,
+	podcastSubscriptions: List<PodcastSubscription>,
+	downloadedPodcastEpisodeIds: Set<String>,
+	downloadingPodcastEpisodeIds: Set<String>,
+	onTogglePodcastSubscription: (Podcast, Boolean) -> Unit,
+	onUpdatePodcastAutoDownload: (Podcast, Boolean) -> Unit,
+	onDownloadPodcastEpisode: (Podcast, PodcastEpisode) -> Unit,
+	onDeletePodcastDownload: (String) -> Unit,
 ) {
     val title: String
     val subtitle: String
@@ -2292,6 +2432,7 @@ private fun LibraryDetailScreen(
     var showEditPlaylistSheet by remember { mutableStateOf(false) }
     var showRenamePlaylistSheet by remember { mutableStateOf(false) }
     var showDeletePlaylistSheet by remember { mutableStateOf(false) }
+	var requestedAutoDownload by remember { mutableStateOf(false) }
 
     when (detail) {
         is LibraryDetail.AlbumPage -> {
@@ -2399,6 +2540,27 @@ private fun LibraryDetailScreen(
                         }
                     }
                 }
+				if (detail is LibraryDetail.PodcastPage) {
+					val subscription = podcastSubscriptions.firstOrNull { it.podcastId == detail.podcast.id }
+					Row(
+						modifier = Modifier.fillMaxWidth(),
+						verticalAlignment = Alignment.CenterVertically,
+						horizontalArrangement = Arrangement.spacedBy(10.dp),
+					) {
+						OutlinedButton(onClick = { onTogglePodcastSubscription(detail.podcast, requestedAutoDownload) }) {
+							Icon(if (subscription == null) Icons.Default.Add else Icons.Default.Check, contentDescription = null)
+							Text(if (subscription == null) "Follow" else "Following")
+						}
+						Text("Auto-download", color = WaveSubtle, modifier = Modifier.weight(1f))
+						Switch(
+							checked = subscription?.autoDownload ?: requestedAutoDownload,
+							onCheckedChange = { enabled ->
+								if (subscription == null) requestedAutoDownload = enabled
+								else onUpdatePodcastAutoDownload(detail.podcast, enabled)
+							},
+						)
+					}
+				}
                 if (detail is LibraryDetail.PlaylistPage) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -2469,6 +2631,13 @@ private fun LibraryDetailScreen(
                     onCreatePlaylistWithTracks = onCreatePlaylistWithTracks,
                     playbackPositionMs = playerState.positionMs,
                     playbackDurationMs = playerState.durationMs,
+					isDownloaded = track.id in downloadedPodcastEpisodeIds,
+					isDownloading = track.id in downloadingPodcastEpisodeIds,
+					onDownload = (detail as? LibraryDetail.PodcastPage)?.let { page ->
+						val episode = page.episodes.firstOrNull { it.id == track.podcastEpisodeId }
+						episode?.let { { onDownloadPodcastEpisode(page.podcast, it) } }
+					},
+					onDeleteDownload = { onDeletePodcastDownload(track.id) },
                 )
             }
         }
@@ -3047,6 +3216,17 @@ private fun NowPlayingSheet(
     connectMessage: String?,
     onRefreshConnectSessions: () -> Unit,
     onConnectPlaybackTo: (String) -> Unit,
+	onPrepareGoogleCast: () -> Unit,
+	onPlayOnOutputDevice: (String) -> Unit,
+	outputDevices: List<OutputDevice>,
+	isLoadingOutputDevices: Boolean,
+	podcastPreferences: PodcastPreferences,
+	sleepTimerRemainingSeconds: Int,
+	onSkipPodcastBack: () -> Unit,
+	onSkipPodcastForward: () -> Unit,
+	onSetPodcastPlaybackSpeed: (Float) -> Unit,
+	onSetPodcastSleepTimer: (Int?) -> Unit,
+	onSetPodcastSleepTimerToEpisodeEnd: () -> Unit,
 ) {
     val track = playerState.currentTrack ?: return
     val durationMs = effectiveDurationMs(playerState)
@@ -3101,6 +3281,17 @@ private fun NowPlayingSheet(
                 connectMessage = connectMessage,
                 onRefreshConnectSessions = onRefreshConnectSessions,
                 onConnectPlaybackTo = onConnectPlaybackTo,
+				onPrepareGoogleCast = onPrepareGoogleCast,
+				onPlayOnOutputDevice = onPlayOnOutputDevice,
+				outputDevices = outputDevices,
+				isLoadingOutputDevices = isLoadingOutputDevices,
+				podcastPreferences = podcastPreferences,
+				sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
+				onSkipPodcastBack = onSkipPodcastBack,
+				onSkipPodcastForward = onSkipPodcastForward,
+				onSetPodcastPlaybackSpeed = onSetPodcastPlaybackSpeed,
+				onSetPodcastSleepTimer = onSetPodcastSleepTimer,
+				onSetPodcastSleepTimerToEpisodeEnd = onSetPodcastSleepTimerToEpisodeEnd,
             )
         } else {
             Column(
@@ -3185,8 +3376,12 @@ private fun NowPlayingSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                if (isRadio || isPodcast) {
+                if (isRadio) {
                     Spacer(modifier = Modifier.size(58.dp))
+				} else if (isPodcast) {
+					IconButton(onClick = onSkipPodcastBack, modifier = Modifier.size(42.dp)) {
+						Icon(Icons.Default.Replay10, contentDescription = "Back ${podcastPreferences.skipBackSeconds} seconds", modifier = Modifier.size(28.dp))
+					}
                 } else {
                     ShuffleModeControl(
                         isEnabled = playerState.isShuffleEnabled,
@@ -3199,19 +3394,19 @@ private fun NowPlayingSheet(
                     IconButton(
                         onClick = onSkipPrevious,
                         enabled = playerState.currentIndex > 0 || (!isPodcast && playerState.repeatMode == WaveRepeatMode.All),
-                        modifier = Modifier.size(58.dp),
+                        modifier = Modifier.size(if (isPodcast) 42.dp else 58.dp),
                     ) {
                         Icon(
                             Icons.Default.SkipPrevious,
                             contentDescription = if (isPodcast) "Previous episode" else "Previous",
-                            modifier = Modifier.size(38.dp),
+                            modifier = Modifier.size(if (isPodcast) 30.dp else 38.dp),
                         )
                     }
                 }
                 IconButton(
                     onClick = onTogglePlayPause,
                     modifier = Modifier
-                        .size(76.dp)
+						.size(if (isPodcast) 64.dp else 76.dp)
                         .clip(CircleShape)
                         .background(WaveText),
                 ) {
@@ -3228,17 +3423,21 @@ private fun NowPlayingSheet(
                     IconButton(
                         onClick = onSkipNext,
                         enabled = playerState.currentIndex < playerState.queue.lastIndex || (!isPodcast && playerState.repeatMode == WaveRepeatMode.All),
-                        modifier = Modifier.size(58.dp),
+                        modifier = Modifier.size(if (isPodcast) 42.dp else 58.dp),
                     ) {
                         Icon(
                             Icons.Default.SkipNext,
                             contentDescription = if (isPodcast) "Next episode" else "Next",
-                            modifier = Modifier.size(38.dp),
+							modifier = Modifier.size(if (isPodcast) 30.dp else 38.dp),
                         )
                     }
                 }
-                if (isRadio || isPodcast) {
+                if (isRadio) {
                     Spacer(modifier = Modifier.size(48.dp))
+				} else if (isPodcast) {
+					IconButton(onClick = onSkipPodcastForward, modifier = Modifier.size(42.dp)) {
+						Icon(Icons.Default.Forward30, contentDescription = "Forward ${podcastPreferences.skipForwardSeconds} seconds", modifier = Modifier.size(28.dp))
+					}
                 } else {
                     RepeatModeControl(
                         repeatMode = playerState.repeatMode,
@@ -3246,6 +3445,16 @@ private fun NowPlayingSheet(
                     )
                 }
             }
+
+			if (isPodcast) {
+				PodcastPlaybackOptions(
+					playbackSpeed = playerState.playbackSpeed,
+					sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
+					onSetPlaybackSpeed = onSetPodcastPlaybackSpeed,
+					onSetSleepTimer = onSetPodcastSleepTimer,
+					onSetSleepTimerToEpisodeEnd = onSetPodcastSleepTimerToEpisodeEnd,
+				)
+			}
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -3295,6 +3504,10 @@ private fun NowPlayingSheet(
                     message = connectMessage,
                     onRefresh = onRefreshConnectSessions,
                     onConnect = onConnectPlaybackTo,
+					onPrepareGoogleCast = onPrepareGoogleCast,
+					onPlayOnOutputDevice = onPlayOnOutputDevice,
+					outputDevices = outputDevices,
+					isLoadingOutputDevices = isLoadingOutputDevices,
                     onDismiss = { showOutputPicker = false },
                 )
             }
@@ -3332,6 +3545,17 @@ private fun LandscapeNowPlaying(
     connectMessage: String?,
     onRefreshConnectSessions: () -> Unit,
     onConnectPlaybackTo: (String) -> Unit,
+	onPrepareGoogleCast: () -> Unit,
+	onPlayOnOutputDevice: (String) -> Unit,
+	outputDevices: List<OutputDevice>,
+	isLoadingOutputDevices: Boolean,
+	podcastPreferences: PodcastPreferences,
+	sleepTimerRemainingSeconds: Int,
+	onSkipPodcastBack: () -> Unit,
+	onSkipPodcastForward: () -> Unit,
+	onSetPodcastPlaybackSpeed: (Float) -> Unit,
+	onSetPodcastSleepTimer: (Int?) -> Unit,
+	onSetPodcastSleepTimerToEpisodeEnd: () -> Unit,
 ) {
     val track = playerState.currentTrack ?: return
     Row(
@@ -3405,7 +3629,11 @@ private fun LandscapeNowPlaying(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
-                if (!isRadio && !isPodcast) ShuffleModeControl(playerState.isShuffleEnabled, onToggleShuffle)
+				if (isPodcast) {
+					IconButton(onClick = onSkipPodcastBack) {
+						Icon(Icons.Default.Replay10, contentDescription = "Back ${podcastPreferences.skipBackSeconds} seconds")
+					}
+				} else if (!isRadio) ShuffleModeControl(playerState.isShuffleEnabled, onToggleShuffle)
                 if (!isRadio) {
                     IconButton(
                         onClick = onSkipPrevious,
@@ -3446,8 +3674,20 @@ private fun LandscapeNowPlaying(
                         )
                     }
                     if (!isPodcast) RepeatModeControl(playerState.repeatMode, onCycleRepeatMode)
+					else IconButton(onClick = onSkipPodcastForward) {
+						Icon(Icons.Default.Forward30, contentDescription = "Forward ${podcastPreferences.skipForwardSeconds} seconds")
+					}
                 }
             }
+			if (isPodcast) {
+				PodcastPlaybackOptions(
+					playbackSpeed = playerState.playbackSpeed,
+					sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
+					onSetPlaybackSpeed = onSetPodcastPlaybackSpeed,
+					onSetSleepTimer = onSetPodcastSleepTimer,
+					onSetSleepTimerToEpisodeEnd = onSetPodcastSleepTimerToEpisodeEnd,
+				)
+			}
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -3488,9 +3728,71 @@ private fun LandscapeNowPlaying(
             message = connectMessage,
             onRefresh = onRefreshConnectSessions,
             onConnect = onConnectPlaybackTo,
+			onPrepareGoogleCast = onPrepareGoogleCast,
+			onPlayOnOutputDevice = onPlayOnOutputDevice,
+			outputDevices = outputDevices,
+			isLoadingOutputDevices = isLoadingOutputDevices,
             onDismiss = onHideOutputPicker,
         )
     }
+}
+
+@Composable
+private fun PodcastPlaybackOptions(
+	playbackSpeed: Float,
+	sleepTimerRemainingSeconds: Int,
+	onSetPlaybackSpeed: (Float) -> Unit,
+	onSetSleepTimer: (Int?) -> Unit,
+	onSetSleepTimerToEpisodeEnd: () -> Unit,
+) {
+	var speedMenuOpen by remember { mutableStateOf(false) }
+	var timerMenuOpen by remember { mutableStateOf(false) }
+	Row(
+		modifier = Modifier.fillMaxWidth(),
+		horizontalArrangement = Arrangement.Center,
+		verticalAlignment = Alignment.CenterVertically,
+	) {
+		Box {
+			TextButton(onClick = { speedMenuOpen = true }) {
+				Text("${playbackSpeed}x", color = WaveAccent, fontWeight = FontWeight.Bold)
+			}
+			DropdownMenu(expanded = speedMenuOpen, onDismissRequest = { speedMenuOpen = false }, modifier = Modifier.background(WaveSurface)) {
+				listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f).forEach { speed ->
+					DropdownMenuItem(
+						text = { Text("${speed}x", color = if (speed == playbackSpeed) WaveAccent else WaveText) },
+						onClick = { speedMenuOpen = false; onSetPlaybackSpeed(speed) },
+					)
+				}
+			}
+		}
+		Box {
+			TextButton(onClick = { timerMenuOpen = true }) {
+				Icon(Icons.Default.Timer, contentDescription = null, tint = WaveAccent)
+				Text(
+					if (sleepTimerRemainingSeconds > 0) formatDuration(sleepTimerRemainingSeconds * 1_000L) else "Sleep timer",
+					color = WaveAccent,
+				)
+			}
+			DropdownMenu(expanded = timerMenuOpen, onDismissRequest = { timerMenuOpen = false }, modifier = Modifier.background(WaveSurface)) {
+				listOf(15, 30, 45, 60).forEach { minutes ->
+					DropdownMenuItem(text = { Text("$minutes minutes", color = WaveText) }, onClick = {
+						timerMenuOpen = false
+						onSetSleepTimer(minutes)
+					})
+				}
+				DropdownMenuItem(text = { Text("End of episode", color = WaveText) }, onClick = {
+					timerMenuOpen = false
+					onSetSleepTimerToEpisodeEnd()
+				})
+				if (sleepTimerRemainingSeconds > 0) {
+					DropdownMenuItem(text = { Text("Cancel timer", color = WaveText) }, onClick = {
+						timerMenuOpen = false
+						onSetSleepTimer(null)
+					})
+				}
+			}
+		}
+	}
 }
 
 @Composable
@@ -3613,8 +3915,14 @@ private fun ConnectDeviceSheet(
     message: String?,
     onRefresh: () -> Unit,
     onConnect: (String) -> Unit,
+	onPrepareGoogleCast: () -> Unit,
+	onPlayOnOutputDevice: (String) -> Unit,
+	outputDevices: List<OutputDevice>,
+	isLoadingOutputDevices: Boolean,
     onDismiss: () -> Unit,
 ) {
+	val supportsCastSender = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK != Configuration.UI_MODE_TYPE_TELEVISION
+	LaunchedEffect(supportsCastSender) { if (supportsCastSender) onPrepareGoogleCast() }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = WaveSurface,
@@ -3624,6 +3932,7 @@ private fun ConnectDeviceSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
+				.verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -3657,6 +3966,43 @@ private fun ConnectDeviceSheet(
                     CircularProgressIndicator(color = WaveAccent, modifier = Modifier.size(26.dp))
                 }
             }
+			Text("Speakers and TVs", color = WaveSubtle, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+			if (supportsCastSender) Row(
+				modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(WaveSurfaceRaised).padding(14.dp),
+				verticalAlignment = Alignment.CenterVertically,
+				horizontalArrangement = Arrangement.spacedBy(12.dp),
+			) {
+				Icon(Icons.Default.Wifi, contentDescription = null, tint = WaveAccent, modifier = Modifier.size(30.dp))
+				Column(modifier = Modifier.weight(1f)) {
+					Text("Google Cast", color = WaveText, fontWeight = FontWeight.Bold)
+					Text("Chromecast and Google TV", color = WaveSubtle, fontSize = 12.sp)
+				}
+				AndroidView(
+					factory = { context ->
+						MediaRouteButton(context).also { button ->
+							button.isEnabled = runCatching { CastButtonFactory.setUpMediaRouteButton(context, button) }.isSuccess
+						}
+					},
+					modifier = Modifier.size(48.dp),
+				)
+			}
+			if (isLoadingOutputDevices) {
+				Text("Searching for DLNA renderers...", color = WaveSubtle, fontSize = 12.sp)
+			}
+			outputDevices.forEach { device ->
+				Row(
+					modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onPlayOnOutputDevice(device.id) }.padding(14.dp),
+					verticalAlignment = Alignment.CenterVertically,
+					horizontalArrangement = Arrangement.spacedBy(12.dp),
+				) {
+					Icon(Icons.Default.Devices, contentDescription = null, tint = WaveAccent, modifier = Modifier.size(30.dp))
+					Column {
+						Text(device.name.ifBlank { "DLNA renderer" }, color = WaveText, fontWeight = FontWeight.Bold)
+						Text("DLNA / UPnP", color = WaveSubtle, fontSize = 12.sp)
+					}
+				}
+			}
+			Text("WaveNode devices", color = WaveSubtle, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             val activeSessions = sessions.filter { it.id.isNotBlank() }
             if (!isLoading && activeSessions.isEmpty()) {
                 EmptyLibraryMessage("No WaveNode devices found.")
@@ -3704,11 +4050,6 @@ private fun ConnectDeviceSheet(
                     }
                 }
             }
-            Text(
-                text = "Open WaveNode on another signed-in device to make it available here.",
-                color = WaveSubtle,
-                fontSize = 12.sp,
-            )
             Spacer(modifier = Modifier.height(12.dp))
         }
     }
@@ -4254,6 +4595,7 @@ private fun PodcastEpisode.toTrack(podcast: Podcast): Track {
         releaseDate = publishedAt,
         imageUrl = imageUrl.ifBlank { podcast.imageUrl.ifBlank { podcast.thumbnailUrl } },
         streamUrl = audioUrl,
+		podcastAudioUrl = audioUrl,
         isExternal = true,
         externalKind = "podcast",
         podcastId = podcast.id,
@@ -4262,6 +4604,7 @@ private fun PodcastEpisode.toTrack(podcast: Podcast): Track {
         podcastEpisodeId = id,
         podcastDescription = description,
         podcastWebsiteUrl = websiteUrl.ifBlank { podcast.websiteUrl },
+		podcastChaptersUrl = chaptersUrl,
         podcastProgressSeconds = progressSeconds,
         podcastCompleted = completed,
         createdAt = publishedAt,

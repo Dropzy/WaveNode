@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -13,8 +15,8 @@ android {
         applicationId = "org.wavenode.player"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.2"
+        versionCode = 3
+        versionName = "0.1.3"
     }
 
     buildTypes {
@@ -32,9 +34,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+
+	kotlin {
+		compilerOptions {
+			jvmTarget.set(JvmTarget.JVM_17)
+		}
+	}
 
     buildFeatures {
         compose = true
@@ -56,6 +61,7 @@ dependencies {
     implementation("androidx.media3:media3-session:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+	implementation("com.google.android.gms:play-services-cast-framework:22.3.1")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("sh.calvin.reorderable:reorderable:3.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")

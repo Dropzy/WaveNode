@@ -34,10 +34,10 @@ class WaveNodePlaybackService : MediaSessionService() {
             .build()
             .apply {
                 setMediaSessionToken(wavePlayer.mediaSession().platformToken)
-                setUsePreviousAction(false)
-                setUseNextAction(false)
-                setUseFastForwardAction(false)
-                setUseRewindAction(false)
+				setUsePreviousAction(true)
+				setUseNextAction(true)
+				setUseFastForwardAction(true)
+				setUseRewindAction(true)
                 setUseStopAction(true)
                 setPlayer(wavePlayer.player())
             }

@@ -107,9 +107,65 @@ class WaveNodeApi(
         }
     }
 
+	suspend fun getPodcastPreferences(session: SavedSession): PodcastPreferences = withContext(Dispatchers.IO) {
+		getObject(session, "/api/podcasts/preferences", "Could not load podcast preferences")
+	}
+
+	suspend fun updatePodcastPreferences(session: SavedSession, preferences: PodcastPreferences): PodcastPreferences = withContext(Dispatchers.IO) {
+		putObject(session, "/api/podcasts/preferences", preferences, "Could not save podcast preferences")
+	}
+
+	suspend fun savePodcastSubscription(session: SavedSession, subscription: PodcastSubscription): PodcastSubscription = withContext(Dispatchers.IO) {
+		val body = json.encodeToString(subscription).toRequestBody(jsonMediaType)
+		val request = authorizedRequest(session, "/api/podcasts/subscriptions").post(body).build()
+		client.newCall(request).execute().use { response ->
+			val responseBody = response.body?.string().orEmpty()
+			val apiResponse = json.decodeFromString<ApiResponse<PodcastSubscription>>(responseBody)
+			if (!response.isSuccessful || !apiResponse.success || apiResponse.data == null) {
+				throw IllegalStateException(apiResponse.error ?: "Could not follow podcast")
+			}
+			apiResponse.data
+		}
+	}
+
+	suspend fun deletePodcastSubscription(session: SavedSession, podcastId: String) = withContext(Dispatchers.IO) {
+		val request = authorizedRequest(session, "/api/podcasts/subscriptions/${pathSegment(podcastId)}")
+			.delete()
+			.build()
+		client.newCall(request).execute().use { response ->
+			if (!response.isSuccessful && response.code != 204) {
+				throw IllegalStateException(apiErrorMessage(response.body?.string().orEmpty(), "Could not unfollow podcast"))
+			}
+		}
+	}
+
     suspend fun getAlbumTracks(session: SavedSession, albumId: String): AlbumTracksResponse = withContext(Dispatchers.IO) {
         getObject(session, "/api/albums/${pathSegment(albumId)}/tracks", "Could not load album")
     }
+
+	suspend fun createCastURL(session: SavedSession, trackId: String): CastURL = withContext(Dispatchers.IO) {
+		val body = "{\"track_id\":${json.encodeToString(trackId)}}".toRequestBody(jsonMediaType)
+		val request = authorizedRequest(session, "/api/outputs/cast-url").post(body).build()
+		client.newCall(request).execute().use { response ->
+			val payload = json.decodeFromString<ApiResponse<CastURL>>(response.body?.string().orEmpty())
+			if (!response.isSuccessful || !payload.success || payload.data == null) throw IllegalStateException(payload.error ?: "Could not prepare cast playback")
+			payload.data
+		}
+	}
+
+	suspend fun discoverOutputDevices(session: SavedSession): List<OutputDevice> = withContext(Dispatchers.IO) {
+		getList(session, "/api/outputs/devices", "Could not discover output devices")
+	}
+
+	suspend fun playOnDLNADevice(session: SavedSession, deviceId: String, mediaUrl: String, title: String): OutputDevice = withContext(Dispatchers.IO) {
+		val body = json.encodeToString(OutputPlayRequest(deviceId, mediaUrl, title)).toRequestBody(jsonMediaType)
+		val request = authorizedRequest(session, "/api/outputs/dlna/play").post(body).build()
+		client.newCall(request).execute().use { response ->
+			val payload = json.decodeFromString<ApiResponse<OutputDevice>>(response.body?.string().orEmpty())
+			if (!response.isSuccessful || !payload.success || payload.data == null) throw IllegalStateException(payload.error ?: "Could not play on renderer")
+			payload.data
+		}
+	}
 
     suspend fun getArtistTracks(session: SavedSession, artistIdOrName: String): ArtistTracksResponse = withContext(Dispatchers.IO) {
         getObject(session, "/api/artists/${pathSegment(artistIdOrName)}/tracks", "Could not load artist")
@@ -349,6 +405,24 @@ class WaveNodeApi(
             return apiResponse.data
         }
     }
+
+	private inline fun <reified RequestType, reified ResponseType> putObject(
+		session: SavedSession,
+		path: String,
+		value: RequestType,
+		fallbackError: String,
+	): ResponseType {
+		val body = json.encodeToString(value).toRequestBody(jsonMediaType)
+		val request = authorizedRequest(session, path).put(body).build()
+		client.newCall(request).execute().use { response ->
+			val responseBody = response.body?.string().orEmpty()
+			val apiResponse = json.decodeFromString<ApiResponse<ResponseType>>(responseBody)
+			if (!response.isSuccessful || !apiResponse.success || apiResponse.data == null) {
+				throw IllegalStateException(apiResponse.error ?: fallbackError)
+			}
+			return apiResponse.data
+		}
+	}
 
     private fun absoluteUrl(session: SavedSession, raw: String): String {
         return if (raw.startsWith("http://") || raw.startsWith("https://")) {

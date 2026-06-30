@@ -72,6 +72,10 @@ data class Track(
     val podcastDescription: String = "",
     @SerialName("podcast_website_url")
     val podcastWebsiteUrl: String = "",
+    @SerialName("podcast_chapters_url")
+    val podcastChaptersUrl: String = "",
+	@SerialName("podcast_audio_url")
+	val podcastAudioUrl: String = "",
     @SerialName("podcast_progress_seconds")
     val podcastProgressSeconds: Int = 0,
     @SerialName("podcast_completed")
@@ -262,6 +266,8 @@ data class Podcast(
     val thumbnailUrl: String = "",
     @SerialName("website_url")
     val websiteUrl: String = "",
+	@SerialName("feed_url")
+	val feedUrl: String = "",
     @SerialName("total_episodes")
     val totalEpisodes: Int = 0,
     val explicit: Boolean = false,
@@ -293,6 +299,35 @@ data class PodcastEpisode(
     @SerialName("progress_seconds")
     val progressSeconds: Int = 0,
     val completed: Boolean = false,
+	@SerialName("chapters_url")
+	val chaptersUrl: String = "",
+	@SerialName("chapters_type")
+	val chaptersType: String = "",
+)
+
+@Serializable
+data class PodcastSubscription(
+	@SerialName("podcast_id") val podcastId: String,
+	val title: String = "",
+	val publisher: String = "",
+	val description: String = "",
+	@SerialName("image_url") val imageUrl: String = "",
+	@SerialName("thumbnail_url") val thumbnailUrl: String = "",
+	@SerialName("website_url") val websiteUrl: String = "",
+	@SerialName("feed_url") val feedUrl: String = "",
+	@SerialName("auto_download") val autoDownload: Boolean = false,
+	@SerialName("playback_speed") val playbackSpeed: Float = 1f,
+	@SerialName("subscribed_at") val subscribedAt: String = "",
+	@SerialName("updated_at") val updatedAt: String = "",
+)
+
+@Serializable
+data class PodcastPreferences(
+	@SerialName("default_playback_speed") val defaultPlaybackSpeed: Float = 1f,
+	@SerialName("skip_back_seconds") val skipBackSeconds: Int = 15,
+	@SerialName("skip_forward_seconds") val skipForwardSeconds: Int = 30,
+	@SerialName("auto_delete_played") val autoDeletePlayed: Boolean = true,
+	@SerialName("updated_at") val updatedAt: String = "",
 )
 
 @Serializable
@@ -324,10 +359,31 @@ data class PodcastProgress(
 data class PodcastHomeResponse(
     @SerialName("continue_listening") val continueListening: List<PodcastProgress> = emptyList(),
     @SerialName("top_podcasts") val topPodcasts: List<Podcast> = emptyList(),
+	val subscriptions: List<PodcastSubscription> = emptyList(),
 )
 
 data class SavedSession(
     val serverUrl: String,
     val token: String,
     val username: String,
+)
+
+@Serializable
+data class OutputDevice(
+	val id: String,
+	val name: String = "",
+	val protocol: String = "dlna",
+)
+
+@Serializable
+data class CastURL(
+	val url: String,
+	@SerialName("expires_at") val expiresAt: String = "",
+)
+
+@Serializable
+data class OutputPlayRequest(
+	@SerialName("device_id") val deviceId: String,
+	@SerialName("media_url") val mediaUrl: String,
+	val title: String,
 )

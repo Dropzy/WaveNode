@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { useAudio } from '../contexts/AudioContext'
 import { Queue } from './Queue'
-import { accountAPI, likedTracksAPI, pluginsAPI, podcastsAPI, ratingsAPI, type PodcastChapter, UserSession } from '../services/api'
+import { accountAPI, likedTracksAPI, outputsAPI, pluginsAPI, podcastsAPI, ratingsAPI, type OutputDevice, type PodcastChapter, UserSession } from '../services/api'
+import { audioService } from '../services/audioService'
+import { castService } from '../services/castService'
 import { getTrackArtworkUrl } from '../utils/mediaUrl'
 import { 
   Play, 
@@ -428,6 +430,8 @@ const PodcastOptions = styled.div`
 	align-items: center;
 	justify-content: center;
 	gap: 8px;
+	min-width: 0;
+	white-space: nowrap;
 	font-size: 11px;
 	color: ${({ theme }) => theme.colors.muted};
 
@@ -435,9 +439,25 @@ const PodcastOptions = styled.div`
 		border: 1px solid ${({ theme }) => theme.colors.border};
 		background: ${({ theme }) => theme.colors.controlBg};
 		color: ${({ theme }) => theme.colors.text};
+		color-scheme: dark;
 		border-radius: 6px;
 		padding: 3px 6px;
+		max-width: 180px;
+
+		option {
+			background: ${({ theme }) => theme.colors.controlBg};
+			color: ${({ theme }) => theme.colors.text};
+		}
 	}
+`
+
+const DesktopTransportRow = styled.div`
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	width: 100%;
+	min-width: 0;
 `
 
 const VolumeSlider = styled.input`
@@ -655,7 +675,9 @@ export const Player: React.FC = () => {
   const [currentSessionId, setCurrentSessionId] = useState('');
   const [connectError, setConnectError] = useState('');
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
-	const [podcastChapters, setPodcastChapters] = useState<PodcastChapter[]>([]);
+  const [podcastChapters, setPodcastChapters] = useState<PodcastChapter[]>([]);
+	const [outputDevices, setOutputDevices] = useState<OutputDevice[]>([]);
+	const [isLoadingOutputs, setIsLoadingOutputs] = useState(false);
   const previousVolumeRef = useRef(1);
   const connectControlRef = useRef<HTMLDivElement>(null);
   
@@ -817,6 +839,11 @@ export const Player: React.FC = () => {
     };
 
     void loadSessions();
+	setIsLoadingOutputs(true);
+	void outputsAPI.discoverDevices()
+		.then(devices => { if (active) setOutputDevices(devices) })
+		.catch(() => { if (active) setOutputDevices([]) })
+		.finally(() => { if (active) setIsLoadingOutputs(false) });
     return () => {
       active = false;
     };
@@ -1002,6 +1029,36 @@ export const Player: React.FC = () => {
     }
   };
 
+	const outputMediaUrl = async (): Promise<string> => {
+		if (!currentTrack) throw new Error('Select something to play first');
+		if (currentTrack.is_external && currentTrack.stream_url) return currentTrack.stream_url;
+		return (await outputsAPI.createCastURL(currentTrack.id)).url;
+	};
+
+	const handleGoogleCast = async () => {
+		if (!currentTrack) return;
+		setConnectError('');
+		try {
+			await castService.cast(currentTrack, await outputMediaUrl(), currentTime);
+			if (isPlaying) await togglePlayPause();
+			setIsConnectOpen(false);
+		} catch (error) {
+			setConnectError(error instanceof Error ? error.message : 'Google Cast failed');
+		}
+	};
+
+	const handleDLNA = async (device: OutputDevice) => {
+		if (!currentTrack) return;
+		setConnectError('');
+		try {
+			await outputsAPI.playDLNA(device.id, await outputMediaUrl(), currentTrack.title);
+			if (isPlaying) await togglePlayPause();
+			setIsConnectOpen(false);
+		} catch (error) {
+			setConnectError(error instanceof Error ? error.message : 'DLNA playback failed');
+		}
+	};
+
   const progressPercentage = Number.isFinite(displayDuration) && displayDuration > 0 ? (currentTime / displayDuration) * 100 : 0;
   const volumePercentage = volume * 100;
 	const sleepMinutes = sleepTimerRemaining > 0 ? Math.ceil(sleepTimerRemaining / 60) : 0;
@@ -1153,6 +1210,7 @@ export const Player: React.FC = () => {
         </TrackInfo>
 
         <DesktopPlayerControls>
+		  <DesktopTransportRow>
           <ControlButtons>
 			{isPodcast ? podcastControlButtons : <>
             <IconButton 
@@ -1183,6 +1241,8 @@ export const Player: React.FC = () => {
             </IconButton>
 			</>}
           </ControlButtons>
+		  {isPodcast && podcastOptions}
+		  </DesktopTransportRow>
           <ProgressBar>
             <Time>{formatTime(currentTime)}</Time>
             <ProgressTrack onClick={handleProgressClick}>
@@ -1192,7 +1252,6 @@ export const Player: React.FC = () => {
             </ProgressTrack>
             <Time>{formatTime(displayDuration)}</Time>
           </ProgressBar>
-		  {isPodcast && podcastOptions}
         </DesktopPlayerControls>
 
         <ExtraControls>
@@ -1211,8 +1270,23 @@ export const Player: React.FC = () => {
               <ConnectMenu>
                 <ConnectMenuHeader>Connect to a device</ConnectMenuHeader>
                 <ConnectMenuHint>
-                  Send the current queue to another signed-in WaveNode session. This player becomes the remote control.
+				  Choose a speaker, television, or another signed-in WaveNode player.
                 </ConnectMenuHint>
+				<ConnectDeviceButton type="button" $active={false} onClick={() => void handleGoogleCast()}>
+				  <Cast size={20} /><ConnectDeviceText><ConnectDeviceName>Google Cast</ConnectDeviceName><ConnectDeviceMeta>Chromecast and Google TV</ConnectDeviceMeta></ConnectDeviceText>
+				</ConnectDeviceButton>
+				{audioService.supportsAirPlay() && (
+				  <ConnectDeviceButton type="button" $active={false} onClick={() => { audioService.showAirPlayPicker(); setIsConnectOpen(false) }}>
+					<Volume2 size={20} /><ConnectDeviceText><ConnectDeviceName>AirPlay</ConnectDeviceName><ConnectDeviceMeta>Apple TV and AirPlay speakers</ConnectDeviceMeta></ConnectDeviceText>
+				  </ConnectDeviceButton>
+				)}
+				{isLoadingOutputs && <ConnectMessage>Searching for DLNA renderers...</ConnectMessage>}
+				{outputDevices.map(device => (
+				  <ConnectDeviceButton key={device.id} type="button" $active={false} onClick={() => void handleDLNA(device)}>
+					<Monitor size={20} /><ConnectDeviceText><ConnectDeviceName>{device.name || 'DLNA renderer'}</ConnectDeviceName><ConnectDeviceMeta>DLNA / UPnP</ConnectDeviceMeta></ConnectDeviceText>
+				  </ConnectDeviceButton>
+				))}
+				<ConnectMenuHeader>WaveNode devices</ConnectMenuHeader>
                 {isLoadingSessions && <ConnectMessage>Loading devices...</ConnectMessage>}
                 {connectError && <ConnectMessage>{connectError}</ConnectMessage>}
                 {!isLoadingSessions && activeSessions.length === 0 && (

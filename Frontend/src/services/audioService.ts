@@ -12,6 +12,7 @@ export class AudioService {
 
   constructor() {
     this.audio = new Audio();
+	this.audio.setAttribute('x-webkit-airplay', 'allow');
     this.audio.preload = 'none'; // Prevent preloading to avoid conflicts
     this.setupEventListeners();
   }
@@ -204,6 +205,16 @@ export class AudioService {
   setTrackEndCallback(callback: () => void): void {
     this.onTrackEnd = callback;
   }
+
+	supportsAirPlay(): boolean {
+		return typeof (this.audio as HTMLAudioElement & { webkitShowPlaybackTargetPicker?: () => void }).webkitShowPlaybackTargetPicker === 'function';
+	}
+
+	showAirPlayPicker(): void {
+		const picker = (this.audio as HTMLAudioElement & { webkitShowPlaybackTargetPicker?: () => void }).webkitShowPlaybackTargetPicker;
+		if (!picker) throw new Error('AirPlay is not available in this browser');
+		picker.call(this.audio);
+	}
 
 	setPlaybackRate(rate: number): void {
 		this.audio.playbackRate = Math.max(0.5, Math.min(3, rate));
