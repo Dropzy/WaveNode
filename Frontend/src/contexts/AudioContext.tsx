@@ -734,10 +734,11 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
 	useEffect(() => {
 		if (!podcastQueueLoadedRef.current || currentTrack?.external_kind !== 'podcast') return;
 		const timer = window.setTimeout(() => {
+			const position = podcastProgressRef.current?.position ?? audioService.getCurrentTime();
 			void podcastsAPI.updateQueue({
 				items: playlistQueue.filter(item => item.external_kind === 'podcast'),
 				current_index: currentTrackIndex,
-				position_seconds: Math.max(0, Math.round(currentTime)),
+				position_seconds: Math.max(0, Math.round(position)),
 			}).catch(error => console.error('Failed to sync podcast queue:', error));
 		}, 1000);
 		return () => window.clearTimeout(timer);
