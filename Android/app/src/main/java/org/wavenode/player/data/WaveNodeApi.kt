@@ -111,6 +111,31 @@ class WaveNodeApi(
         }
     }
 
+    suspend fun getAudiobookHome(session: SavedSession): AudiobookHome = withContext(Dispatchers.IO) {
+        getObject(session, "/api/audiobooks/home", "Could not load audiobooks")
+    }
+
+    suspend fun searchAudiobooks(session: SavedSession, query: String): List<Audiobook> = withContext(Dispatchers.IO) {
+        getList(session, "/api/audiobooks/search?q=${queryValue(query)}&limit=24", "Could not search audiobooks")
+    }
+
+    suspend fun getAudiobook(session: SavedSession, bookId: String): AudiobookDetail = withContext(Dispatchers.IO) {
+        getObject(session, "/api/audiobooks/${pathSegment(bookId)}", "Could not load audiobook")
+    }
+
+    suspend fun updateAudiobookProgress(session: SavedSession, progress: AudiobookProgress): AudiobookProgress = withContext(Dispatchers.IO) {
+        val body = json.encodeToString(progress).toRequestBody(jsonMediaType)
+        val request = authorizedRequest(session, "/api/audiobooks/progress").put(body).build()
+        client.newCall(request).execute().use { response ->
+            val responseBody = response.body?.string().orEmpty()
+            val apiResponse = json.decodeFromString<ApiResponse<AudiobookProgress>>(responseBody)
+            if (!response.isSuccessful || !apiResponse.success || apiResponse.data == null) {
+                throw IllegalStateException(apiResponse.error ?: "Could not save audiobook progress")
+            }
+            apiResponse.data
+        }
+    }
+
 	suspend fun getPodcastPreferences(session: SavedSession): PodcastPreferences = withContext(Dispatchers.IO) {
 		getObject(session, "/api/podcasts/preferences", "Could not load podcast preferences")
 	}

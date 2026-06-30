@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode, useRef } from 'react';
-import { Music, musicAPI, playbackConnectAPI, podcastsAPI, recentlyPlayedAPI, scrobbleAPI } from '../services/api';
+import { AudiobookProgress, Music, audiobooksAPI, musicAPI, playbackConnectAPI, podcastsAPI, recentlyPlayedAPI, scrobbleAPI } from '../services/api';
 import { audioService } from '../services/audioService';
 import { useAuth } from './AuthContext';
 import { getTrackArtworkUrl } from '../utils/mediaUrl';
@@ -200,38 +200,61 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
 
   const reportPodcastProgress = useCallback(async () => {
     const snapshot = podcastProgressRef.current;
-    if (!snapshot || snapshot.track.external_kind !== 'podcast' || !snapshot.track.podcast_id || !snapshot.track.podcast_episode_id) {
+    if (!snapshot || !['podcast', 'audiobook'].includes(snapshot.track.external_kind || '')) {
       return;
     }
     const position = Math.max(0, Math.round(snapshot.position));
     const totalDuration = Math.max(0, Math.round(snapshot.duration || snapshot.track.duration || 0));
-    const key = `${snapshot.track.podcast_id}:${snapshot.track.podcast_episode_id}`;
+    const isAudiobook = snapshot.track.external_kind === 'audiobook';
+    if (isAudiobook && (!snapshot.track.audiobook_id || !snapshot.track.audiobook_chapter_id)) return;
+    if (!isAudiobook && (!snapshot.track.podcast_id || !snapshot.track.podcast_episode_id)) return;
+    const key = isAudiobook
+      ? `${snapshot.track.audiobook_id}:${snapshot.track.audiobook_chapter_id}`
+      : `${snapshot.track.podcast_id}:${snapshot.track.podcast_episode_id}`;
     const lastReport = lastPodcastReportRef.current;
     if (lastReport.key === key && lastReport.position === position) {
       return;
     }
     lastPodcastReportRef.current = { key, position };
     try {
-      const saved = await podcastsAPI.updateProgress({
-        podcast_id: snapshot.track.podcast_id,
-        episode_id: snapshot.track.podcast_episode_id,
-        podcast_title: snapshot.track.podcast_title || snapshot.track.album || 'Podcast',
-        publisher: snapshot.track.podcast_publisher || '',
-        episode_title: snapshot.track.title,
-        description: snapshot.track.podcast_description || '',
-        image_url: snapshot.track.image_url || '',
-        audio_url: snapshot.track.stream_url || '',
-        website_url: snapshot.track.podcast_website_url || '',
-        published_at: snapshot.track.release_date || undefined,
-        duration_seconds: totalDuration,
-        position_seconds: position,
-      });
-	  await podcastsAPI.updateQueue({
-		items: queueRef.current.filter(item => item.external_kind === 'podcast'),
-		current_index: currentTrackIndexRef.current,
-		position_seconds: position,
-	  });
-      window.dispatchEvent(new CustomEvent('wavenode:podcast-progress', { detail: saved }));
+      if (isAudiobook) {
+        const saved: AudiobookProgress = await audiobooksAPI.updateProgress({
+          book_id: snapshot.track.audiobook_id!,
+          chapter_id: snapshot.track.audiobook_chapter_id!,
+          book_title: snapshot.track.audiobook_title || snapshot.track.album || 'Audiobook',
+          author: snapshot.track.audiobook_author || snapshot.track.artist || '',
+          chapter_title: snapshot.track.title,
+          chapter_number: snapshot.track.audiobook_chapter_number || 0,
+          description: snapshot.track.audiobook_description || '',
+          image_url: snapshot.track.image_url || '',
+          audio_url: snapshot.track.stream_url || '',
+          website_url: snapshot.track.audiobook_website_url || '',
+          duration_seconds: totalDuration,
+          position_seconds: position,
+        });
+        window.dispatchEvent(new CustomEvent('wavenode:audiobook-progress', { detail: saved }));
+      } else {
+        const saved = await podcastsAPI.updateProgress({
+          podcast_id: snapshot.track.podcast_id!,
+          episode_id: snapshot.track.podcast_episode_id!,
+          podcast_title: snapshot.track.podcast_title || snapshot.track.album || 'Podcast',
+          publisher: snapshot.track.podcast_publisher || '',
+          episode_title: snapshot.track.title,
+          description: snapshot.track.podcast_description || '',
+          image_url: snapshot.track.image_url || '',
+          audio_url: snapshot.track.stream_url || '',
+          website_url: snapshot.track.podcast_website_url || '',
+          published_at: snapshot.track.release_date || undefined,
+          duration_seconds: totalDuration,
+          position_seconds: position,
+        });
+	    await podcastsAPI.updateQueue({
+		  items: queueRef.current.filter(item => item.external_kind === 'podcast'),
+		  current_index: currentTrackIndexRef.current,
+		  position_seconds: position,
+	    });
+        window.dispatchEvent(new CustomEvent('wavenode:podcast-progress', { detail: saved }));
+      }
     } catch (error) {
       console.error('Failed to save podcast progress:', error);
       lastPodcastReportRef.current = { key: '', position: -1 };
@@ -243,7 +266,7 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
     if (previous && previous.track.id !== currentTrack?.id) {
       void reportPodcastProgress();
     }
-    podcastProgressRef.current = currentTrack?.external_kind === 'podcast'
+    podcastProgressRef.current = currentTrack && ['podcast', 'audiobook'].includes(currentTrack.external_kind || '')
       ? { track: currentTrack, position: currentTime, duration }
       : null;
   }, [currentTime, currentTrack, duration, reportPodcastProgress]);

@@ -199,6 +199,33 @@ func (db *DB) runMigrations() error {
 		return fmt.Errorf("failed to migrate podcast progress: %v", err)
 	}
 
+	audiobookProgressMigration := `
+		CREATE TABLE IF NOT EXISTS audiobook_progress (
+			user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			book_id VARCHAR(255) NOT NULL,
+			chapter_id VARCHAR(255) NOT NULL,
+			book_title TEXT NOT NULL DEFAULT '',
+			author TEXT NOT NULL DEFAULT '',
+			chapter_title TEXT NOT NULL DEFAULT '',
+			chapter_number INTEGER NOT NULL DEFAULT 0 CHECK (chapter_number >= 0),
+			description TEXT NOT NULL DEFAULT '',
+			image_url TEXT NOT NULL DEFAULT '',
+			audio_url TEXT NOT NULL DEFAULT '',
+			website_url TEXT NOT NULL DEFAULT '',
+			duration_seconds INTEGER NOT NULL DEFAULT 0 CHECK (duration_seconds >= 0),
+			position_seconds INTEGER NOT NULL DEFAULT 0 CHECK (position_seconds >= 0),
+			completed BOOLEAN NOT NULL DEFAULT FALSE,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (user_id, book_id, chapter_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_audiobook_progress_continue
+			ON audiobook_progress(user_id, updated_at DESC)
+			WHERE position_seconds > 0 AND completed = FALSE;
+	`
+	if _, err := db.conn.Exec(audiobookProgressMigration); err != nil {
+		return fmt.Errorf("failed to migrate audiobook progress: %v", err)
+	}
+
 	podcastFeaturesMigration := `
 		CREATE TABLE IF NOT EXISTS podcast_subscriptions (
 			user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,

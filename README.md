@@ -9,6 +9,7 @@ WaveNode is a self-hosted music server for streaming a personal music collection
 - Dynamic smart playlists with nested match-all/match-any groups, relative dates, sorting, limits, and live previews
 - Smart playlists remain fully playable in Subsonic clients as read-only snapshots
 - Browser-based playback, queue, search, playlists, liked tracks, albums, and artists
+- Online public-domain audiobooks from LibriVox with chapter playback and synchronized reading progress
 - Subsonic/OpenSubsonic-compatible API for third-party music clients
 - ReplayGain track/album normalization and configurable per-user transcoding profiles
 - Searchable listening history with CSV export and privacy controls
@@ -112,7 +113,7 @@ For secure internet access, WaveNode includes an optional Caddy gateway that obt
 
 ## Project Status
 
-WaveNode `v0.1.4` is the current stable release. Docker/web playback is the primary server release target. The Electron desktop client and Android client are included as companion clients for connecting to an existing WaveNode server.
+WaveNode `v0.1.5` is the current stable release. Docker/web playback is the primary server release target. The Electron desktop client and Android client are included as companion clients for connecting to an existing WaveNode server.
 
 ## Community
 

@@ -42,6 +42,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -142,6 +143,10 @@ import org.wavenode.player.AppState
 import org.wavenode.player.LibraryDetail
 import org.wavenode.player.data.Album
 import org.wavenode.player.data.Artist
+import org.wavenode.player.data.Audiobook
+import org.wavenode.player.data.AudiobookChapter
+import org.wavenode.player.data.AudiobookHome
+import org.wavenode.player.data.AudiobookProgress
 import org.wavenode.player.data.DiscoveredServer
 import org.wavenode.player.data.Playlist
 import org.wavenode.player.data.Podcast
@@ -175,6 +180,7 @@ private enum class LibraryFilter(val label: String) {
     Artists("Artists"),
     Tracks("Tracks"),
     Podcasts("Podcasts"),
+	Audiobooks("Audiobooks"),
     Radio("Radio"),
 }
 
@@ -207,6 +213,9 @@ fun WaveNodeApp(
     onPodcastQueryChange: (String) -> Unit,
     onOpenPodcast: (Podcast) -> Unit,
     onResumePodcast: (PodcastProgress) -> Unit,
+	onAudiobookQueryChange: (String) -> Unit,
+	onOpenAudiobook: (Audiobook) -> Unit,
+	onResumeAudiobook: (AudiobookProgress) -> Unit,
 	onTogglePodcastSubscription: (Podcast, Boolean) -> Unit,
 	onUpdatePodcastAutoDownload: (Podcast, Boolean) -> Unit,
 	onDownloadPodcastEpisode: (Podcast, PodcastEpisode) -> Unit,
@@ -260,6 +269,9 @@ fun WaveNodeApp(
             onPodcastQueryChange = onPodcastQueryChange,
             onOpenPodcast = onOpenPodcast,
             onResumePodcast = onResumePodcast,
+			onAudiobookQueryChange = onAudiobookQueryChange,
+			onOpenAudiobook = onOpenAudiobook,
+			onResumeAudiobook = onResumeAudiobook,
 			onTogglePodcastSubscription = onTogglePodcastSubscription,
 			onUpdatePodcastAutoDownload = onUpdatePodcastAutoDownload,
 			onDownloadPodcastEpisode = onDownloadPodcastEpisode,
@@ -469,6 +481,9 @@ private fun MainShell(
     onPodcastQueryChange: (String) -> Unit,
     onOpenPodcast: (Podcast) -> Unit,
     onResumePodcast: (PodcastProgress) -> Unit,
+	onAudiobookQueryChange: (String) -> Unit,
+	onOpenAudiobook: (Audiobook) -> Unit,
+	onResumeAudiobook: (AudiobookProgress) -> Unit,
 	onTogglePodcastSubscription: (Podcast, Boolean) -> Unit,
 	onUpdatePodcastAutoDownload: (Podcast, Boolean) -> Unit,
 	onDownloadPodcastEpisode: (Podcast, PodcastEpisode) -> Unit,
@@ -770,6 +785,14 @@ private fun MainShell(
                     onPodcastQueryChange = onPodcastQueryChange,
                     onOpenPodcast = onOpenPodcast,
                     onResumePodcast = onResumePodcast,
+					audiobookQuery = state.audiobookQuery,
+					audiobooks = state.audiobooks,
+					audiobookHome = state.audiobookHome,
+					isLoadingAudiobooks = state.isLoadingAudiobooks,
+					audiobookError = state.audiobookError,
+					onAudiobookQueryChange = onAudiobookQueryChange,
+					onOpenAudiobook = onOpenAudiobook,
+					onResumeAudiobook = onResumeAudiobook,
                     playerState = playerState,
                     onPlayFromHere = onPlayFromHere,
                     onOpenAlbum = onOpenAlbum,
@@ -1163,6 +1186,14 @@ private fun LibraryScreen(
     onPodcastQueryChange: (String) -> Unit,
     onOpenPodcast: (Podcast) -> Unit,
     onResumePodcast: (PodcastProgress) -> Unit,
+	audiobookQuery: String,
+	audiobooks: List<Audiobook>,
+	audiobookHome: AudiobookHome,
+	isLoadingAudiobooks: Boolean,
+	audiobookError: String?,
+	onAudiobookQueryChange: (String) -> Unit,
+	onOpenAudiobook: (Audiobook) -> Unit,
+	onResumeAudiobook: (AudiobookProgress) -> Unit,
     playerState: PlayerState,
     onPlayFromHere: (Track, List<Track>) -> Unit,
     onOpenAlbum: (Album) -> Unit,
@@ -1224,12 +1255,12 @@ private fun LibraryScreen(
                         )
                     }
                 }
-                if (selectedFilter == LibraryFilter.Podcasts) {
+                if (selectedFilter == LibraryFilter.Podcasts || selectedFilter == LibraryFilter.Audiobooks) {
                     OutlinedTextField(
-                        value = podcastQuery,
-                        onValueChange = onPodcastQueryChange,
+                        value = if (selectedFilter == LibraryFilter.Podcasts) podcastQuery else audiobookQuery,
+                        onValueChange = if (selectedFilter == LibraryFilter.Podcasts) onPodcastQueryChange else onAudiobookQueryChange,
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        placeholder = { Text("Search podcasts") },
+                        placeholder = { Text(if (selectedFilter == LibraryFilter.Podcasts) "Search podcasts" else "Search public-domain audiobooks") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -1357,6 +1388,24 @@ private fun LibraryScreen(
                     }
                 }
             }
+			LibraryFilter.Audiobooks -> {
+				if (audiobookQuery.isBlank() && audiobookHome.continueListening.isNotEmpty()) {
+					item { SectionHeader("Continue listening", null) }
+					item {
+						LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(start = 16.dp)) {
+							items(audiobookHome.continueListening, key = { "${it.bookId}:${it.chapterId}" }) { progress ->
+								AudiobookContinueCard(progress, playerState) { onResumeAudiobook(progress) }
+							}
+						}
+					}
+				}
+				item { SectionHeader(if (audiobookQuery.isBlank()) "Featured audiobooks" else "Search results", null) }
+				when {
+					isLoadingAudiobooks -> item { Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+					audiobooks.isEmpty() -> item { EmptyLibraryMessage(audiobookError ?: "No audiobooks found.") }
+					else -> items(audiobooks, key = { it.id }) { book -> AudiobookLibraryRow(book) { onOpenAudiobook(book) } }
+				}
+			}
             LibraryFilter.Radio -> {
                 if (visibleRadioRows.all { it.items.isEmpty() }) item { EmptyLibraryMessage("No enabled radio plugins found.") }
                 visibleRadioRows.forEach { row ->
@@ -1663,6 +1712,44 @@ private fun PodcastContinueCard(progress: PodcastProgress, playerState: PlayerSt
             Text("${formatDuration(((duration - position).coerceAtLeast(0)).toLong() * 1000L)} left", color = WaveSubtle, fontSize = 11.sp)
         }
     }
+}
+
+@Composable
+private fun AudiobookLibraryRow(book: Audiobook, onClick: () -> Unit) {
+	Row(
+		modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
+		verticalAlignment = Alignment.CenterVertically,
+		horizontalArrangement = Arrangement.spacedBy(14.dp),
+	) {
+		Artwork(url = book.imageUrl.takeIf { it.isNotBlank() }, size = 74, rounded = 8)
+		Column(modifier = Modifier.weight(1f)) {
+			Text(book.title, color = WaveText, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+			Text(book.author, color = WaveSubtle, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+			Text("${book.chapterCount} chapters - ${formatDuration(book.durationSeconds.toLong() * 1000L)}", color = WaveSubtle, fontSize = 12.sp)
+		}
+		Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, tint = WaveSubtle)
+	}
+}
+
+@Composable
+private fun AudiobookContinueCard(progress: AudiobookProgress, playerState: PlayerState, onClick: () -> Unit) {
+	val isCurrent = playerState.currentTrack?.id == "audiobook:${progress.bookId}:${progress.chapterId}"
+	val position = if (isCurrent) (playerState.positionMs / 1000L).toInt() else progress.positionSeconds
+	val duration = if (isCurrent && playerState.durationMs > 0L) (playerState.durationMs / 1000L).toInt() else progress.durationSeconds
+	val fraction = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
+	Row(
+		modifier = Modifier.size(300.dp, 112.dp).clip(RoundedCornerShape(8.dp)).background(WaveSurface).clickable(onClick = onClick).padding(12.dp),
+		verticalAlignment = Alignment.CenterVertically,
+		horizontalArrangement = Arrangement.spacedBy(12.dp),
+	) {
+		Artwork(url = progress.imageUrl.takeIf { it.isNotBlank() }, size = 84, rounded = 8)
+		Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+			Text(progress.bookTitle, color = WaveText, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+			Text(progress.chapterTitle, color = WaveSubtle, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+			LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth().height(3.dp), color = WaveAccent, trackColor = WaveSurfaceRaised)
+			Text("${formatDuration((duration - position).coerceAtLeast(0).toLong() * 1000L)} left", color = WaveSubtle, fontSize = 11.sp)
+		}
+	}
 }
 
 @Composable
@@ -2059,10 +2146,13 @@ private fun TrackRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (track.externalKind == "podcast" && (track.podcastProgressSeconds > 0 || track.podcastCompleted || isCurrent)) {
-                val position = if (isCurrent) (playbackPositionMs / 1000L).toInt() else track.podcastProgressSeconds
+            val isLongform = track.externalKind == "podcast" || track.externalKind == "audiobook"
+			val savedPosition = if (track.externalKind == "audiobook") track.audiobookProgressSeconds else track.podcastProgressSeconds
+			val savedCompleted = if (track.externalKind == "audiobook") track.audiobookCompleted else track.podcastCompleted
+            if (isLongform && (savedPosition > 0 || savedCompleted || isCurrent)) {
+                val position = if (isCurrent) (playbackPositionMs / 1000L).toInt() else savedPosition
                 val total = if (isCurrent && playbackDurationMs > 0L) (playbackDurationMs / 1000L).toInt() else track.duration
-                val completed = track.podcastCompleted || (total > 0 && (total - position <= 30 || position.toFloat() / total >= 0.95f))
+                val completed = savedCompleted || (total > 0 && (total - position <= 30 || position.toFloat() / total >= 0.95f))
                 val fraction = if (total > 0) (position.toFloat() / total).coerceIn(0f, 1f) else 0f
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     LinearProgressIndicator(
@@ -2492,6 +2582,13 @@ private fun LibraryDetailScreen(
             artworkUrl = detail.podcast.imageUrl.ifBlank { detail.podcast.thumbnailUrl }.takeIf { it.isNotBlank() }
             albums = emptyList()
         }
+		is LibraryDetail.AudiobookPage -> {
+			title = detail.detail.book.title
+			subtitle = "${detail.detail.book.author} - ${detail.detail.chapters.size} chapters"
+			tracks = detail.detail.chapters.map { it.toTrack(detail.detail.book) }
+			artworkUrl = detail.detail.book.imageUrl.takeIf { it.isNotBlank() }
+			albums = emptyList()
+		}
     }
     val visibleTracks = remember(tracks, shuffleSeed, selectedSort, detail) {
         if (shuffleSeed == 0 || tracks.size < 2) {
@@ -2547,9 +2644,13 @@ private fun LibraryDetailScreen(
                             modifier = Modifier.weight(1f),
                         ) {
                             Icon(Icons.Default.PlayArrow, contentDescription = null)
-                            Text(if (detail is LibraryDetail.PodcastPage) "Play latest" else "Play All")
+                            Text(when (detail) {
+								is LibraryDetail.PodcastPage -> "Play latest"
+								is LibraryDetail.AudiobookPage -> "Start book"
+								else -> "Play All"
+							})
                         }
-                        if (detail !is LibraryDetail.PodcastPage) {
+                        if (detail !is LibraryDetail.PodcastPage && detail !is LibraryDetail.AudiobookPage) {
                             IconButton(
                                 onClick = { shuffleSeed = Random.nextInt(1, Int.MAX_VALUE) },
                                 modifier = Modifier
@@ -2637,9 +2738,17 @@ private fun LibraryDetailScreen(
             }
         }
 
-        item { SectionHeader(if (detail is LibraryDetail.PodcastPage) "Episodes" else "Tracks", "${tracks.size}") }
+        item { SectionHeader(when (detail) {
+			is LibraryDetail.PodcastPage -> "Episodes"
+			is LibraryDetail.AudiobookPage -> "Chapters"
+			else -> "Tracks"
+		}, "${tracks.size}") }
         if (tracks.isEmpty()) {
-            item { EmptyLibraryMessage(if (detail is LibraryDetail.PodcastPage) "No playable episodes found." else "No tracks found.") }
+            item { EmptyLibraryMessage(when (detail) {
+				is LibraryDetail.PodcastPage -> "No playable episodes found."
+				is LibraryDetail.AudiobookPage -> "No playable chapters found."
+				else -> "No tracks found."
+			}) }
         } else {
             itemsIndexed(visibleTracks, key = { _, track -> track.id }) { _, track ->
                 TrackRow(
@@ -3261,10 +3370,12 @@ private fun NowPlayingSheet(
     val track = playerState.currentTrack ?: return
     val durationMs = effectiveDurationMs(playerState)
     val positionMs = playerState.positionMs.coerceAtMost(durationMs.coerceAtLeast(playerState.positionMs))
-    val isPodcast = track.externalKind == "podcast"
+    val isAudiobook = track.externalKind == "audiobook"
+    val isPodcast = track.externalKind == "podcast" || isAudiobook
     val isRadio = track.isExternal && !isPodcast
     val sourceLabel = when {
         isRadio -> "Live radio"
+        isAudiobook -> track.audiobookTitle.ifBlank { track.album.ifBlank { "Audiobook" } }
         isPodcast -> track.podcastTitle.ifBlank { track.album.ifBlank { "Podcast" } }
         else -> track.album.ifBlank { "Your Library" }
     }
@@ -3289,6 +3400,7 @@ private fun NowPlayingSheet(
                 durationMs = durationMs,
                 isRadio = isRadio,
                 isPodcast = isPodcast,
+				isAudiobook = isAudiobook,
                 sourceLabel = sourceLabel,
                 connectLabel = connectLabel,
                 showOutputPicker = showOutputPicker,
@@ -3430,7 +3542,7 @@ private fun NowPlayingSheet(
                     ) {
                         Icon(
                             Icons.Default.SkipPrevious,
-                            contentDescription = if (isPodcast) "Previous episode" else "Previous",
+							contentDescription = if (isAudiobook) "Previous chapter" else if (isPodcast) "Previous episode" else "Previous",
                             modifier = Modifier.size(if (isPodcast) 30.dp else 38.dp),
                         )
                     }
@@ -3459,7 +3571,7 @@ private fun NowPlayingSheet(
                     ) {
                         Icon(
                             Icons.Default.SkipNext,
-                            contentDescription = if (isPodcast) "Next episode" else "Next",
+							contentDescription = if (isAudiobook) "Next chapter" else if (isPodcast) "Next episode" else "Next",
 							modifier = Modifier.size(if (isPodcast) 30.dp else 38.dp),
                         )
                     }
@@ -3578,6 +3690,7 @@ private fun LandscapeNowPlaying(
     durationMs: Long,
     isRadio: Boolean,
     isPodcast: Boolean,
+	isAudiobook: Boolean,
     sourceLabel: String,
     connectLabel: String,
     showOutputPicker: Boolean,
@@ -3696,7 +3809,7 @@ private fun LandscapeNowPlaying(
                     ) {
                         Icon(
                             Icons.Default.SkipPrevious,
-                            contentDescription = if (isPodcast) "Previous episode" else "Previous",
+							contentDescription = if (isAudiobook) "Previous chapter" else if (isPodcast) "Previous episode" else "Previous",
                             modifier = Modifier.size(34.dp),
                         )
                     }
@@ -3723,7 +3836,7 @@ private fun LandscapeNowPlaying(
                     ) {
                         Icon(
                             Icons.Default.SkipNext,
-                            contentDescription = if (isPodcast) "Next episode" else "Next",
+							contentDescription = if (isAudiobook) "Next chapter" else if (isPodcast) "Next episode" else "Next",
                             modifier = Modifier.size(34.dp),
                         )
                     }
@@ -4766,6 +4879,28 @@ private fun PodcastEpisode.toTrack(podcast: Podcast): Track {
         createdAt = publishedAt,
     )
 }
+
+private fun AudiobookChapter.toTrack(book: Audiobook): Track = Track(
+	id = "audiobook:${book.id}:$id",
+	title = title.ifBlank { "Chapter $number" },
+	artist = book.author,
+	album = book.title,
+	genre = "Audiobook",
+	duration = durationSeconds,
+	imageUrl = book.imageUrl,
+	streamUrl = audioUrl,
+	isExternal = true,
+	externalKind = "audiobook",
+	audiobookId = book.id,
+	audiobookTitle = book.title,
+	audiobookAuthor = book.author,
+	audiobookChapterId = id,
+	audiobookChapterNumber = number,
+	audiobookDescription = book.description,
+	audiobookWebsiteUrl = book.websiteUrl,
+	audiobookProgressSeconds = progressSeconds,
+	audiobookCompleted = completed,
+)
 
 private fun pluginItemToTrack(pluginId: String, item: PluginRowItem): Track {
     return Track(

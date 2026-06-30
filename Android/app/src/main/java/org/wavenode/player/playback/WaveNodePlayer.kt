@@ -139,7 +139,7 @@ class WaveNodePlayer private constructor(
         val safeIndex = startIndex.coerceIn(0, playableTracks.lastIndex)
         val track = playableTracks[safeIndex]
         val previousState = _state.value
-        val isPodcastQueue = playableTracks.any { it.externalKind == "podcast" }
+        val isPodcastQueue = playableTracks.any { it.externalKind == "podcast" || it.externalKind == "audiobook" }
         val shuffleEnabled = if (isPodcastQueue) false else previousState.isShuffleEnabled
         val repeatMode = if (isPodcastQueue) WaveRepeatMode.Off else previousState.repeatMode
         remoteControlled = false

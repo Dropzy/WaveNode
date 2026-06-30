@@ -3,18 +3,18 @@ package org.wavenode.player
 import android.Manifest
 import android.os.Bundle
 import android.os.Build
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import org.wavenode.player.ui.WaveNodeApp
 import org.wavenode.player.ui.WaveNodeTheme
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     private val viewModel: WaveNodeViewModel by viewModels()
 
     override fun onStart() {
@@ -66,6 +66,9 @@ class MainActivity : ComponentActivity() {
                     onPodcastQueryChange = viewModel::updatePodcastSearch,
                     onOpenPodcast = viewModel::openPodcast,
                     onResumePodcast = viewModel::resumePodcast,
+					onAudiobookQueryChange = viewModel::updateAudiobookSearch,
+					onOpenAudiobook = viewModel::openAudiobook,
+					onResumeAudiobook = viewModel::resumeAudiobook,
 					onTogglePodcastSubscription = viewModel::togglePodcastSubscription,
 					onUpdatePodcastAutoDownload = viewModel::updatePodcastAutoDownload,
 					onDownloadPodcastEpisode = viewModel::downloadPodcastEpisode,

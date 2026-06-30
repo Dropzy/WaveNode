@@ -13,6 +13,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.wavenode.player.data.Album
 import org.wavenode.player.data.Artist
+import org.wavenode.player.data.Audiobook
+import org.wavenode.player.data.AudiobookChapter
+import org.wavenode.player.data.AudiobookDetail
+import org.wavenode.player.data.AudiobookHome
+import org.wavenode.player.data.AudiobookProgress
 import org.wavenode.player.data.DiscoveredServer
 import org.wavenode.player.data.Playlist
 import org.wavenode.player.data.OutputDevice
@@ -51,6 +56,11 @@ data class AppState(
     val podcastHome: PodcastHomeResponse = PodcastHomeResponse(),
     val isLoadingPodcastHome: Boolean = false,
     val podcastHomeError: String? = null,
+	val audiobookQuery: String = "",
+	val audiobooks: List<Audiobook> = emptyList(),
+	val audiobookHome: AudiobookHome = AudiobookHome(),
+	val isLoadingAudiobooks: Boolean = false,
+	val audiobookError: String? = null,
 	val podcastPreferences: PodcastPreferences = PodcastPreferences(),
 	val downloadedPodcastEpisodeIds: Set<String> = emptySet(),
 	val downloadingPodcastEpisodeIds: Set<String> = emptySet(),
@@ -81,6 +91,7 @@ sealed interface LibraryDetail {
     data class ArtistPage(val artist: Artist, val tracks: List<Track>, val albums: List<Album>) : LibraryDetail
     data class PlaylistPage(val playlist: Playlist, val tracks: List<Track>) : LibraryDetail
     data class PodcastPage(val podcast: Podcast, val episodes: List<PodcastEpisode>) : LibraryDetail
+	data class AudiobookPage(val detail: AudiobookDetail) : LibraryDetail
 }
 
 class WaveNodeViewModel(application: Application) : AndroidViewModel(application) {
@@ -97,6 +108,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
     private var lastRecordedTrackId: String? = null
     private var appVisible = false
     private var podcastSearchJob: Job? = null
+	private var audiobookSearchJob: Job? = null
     private var lastPodcastSnapshot: PlayerState? = null
     private var lastPodcastReportKey = ""
     private var lastPodcastReportPosition = -1
@@ -106,6 +118,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
         if (_state.value.session != null) {
             refreshTracks()
             refreshPodcastHome()
+			refreshAudiobookHome()
 			refreshPodcastPreferences()
         } else {
             discoverServers()
@@ -117,10 +130,10 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                     state.currentTrack?.let(::recordPlay)
                 }
                 val previous = lastPodcastSnapshot
-                if (previous?.currentTrack?.externalKind == "podcast" && previous.currentTrack?.id != state.currentTrack?.id) {
+                if (previous != null && previous.currentTrack?.externalKind in setOf("podcast", "audiobook") && previous.currentTrack?.id != state.currentTrack?.id) {
                     reportPodcastProgress(previous, force = true)
                 }
-                if (state.currentTrack?.externalKind == "podcast") {
+                if (state.currentTrack?.externalKind in setOf("podcast", "audiobook")) {
                     lastPodcastSnapshot = state
                     reportPodcastProgress(state, force = !state.isPlaying)
                 } else {
@@ -167,6 +180,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                     _state.value = AppState(session = session, isLoading = true)
                     refreshTracks()
                     refreshPodcastHome()
+					refreshAudiobookHome()
                 }
                 .onFailure { error ->
                     _state.value = _state.value.copy(isLoading = false, error = error.message ?: "Login failed")
@@ -354,6 +368,70 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+	fun updateAudiobookSearch(query: String) {
+		val session = _state.value.session ?: return
+		audiobookSearchJob?.cancel()
+		_state.value = _state.value.copy(
+			audiobookQuery = query,
+			audiobooks = if (query.isBlank()) _state.value.audiobookHome.featured else _state.value.audiobooks,
+			isLoadingAudiobooks = false,
+			audiobookError = null,
+		)
+		if (query.isBlank()) return
+		audiobookSearchJob = viewModelScope.launch {
+			delay(350)
+			_state.value = _state.value.copy(isLoadingAudiobooks = true)
+			runCatching { api.searchAudiobooks(session, query.trim()) }
+				.onSuccess { books ->
+					if (_state.value.audiobookQuery == query) {
+						_state.value = _state.value.copy(audiobooks = books, isLoadingAudiobooks = false)
+					}
+				}
+				.onFailure { error ->
+					if (_state.value.audiobookQuery == query) {
+						_state.value = _state.value.copy(audiobooks = emptyList(), isLoadingAudiobooks = false, audiobookError = error.message ?: "Could not search audiobooks")
+					}
+				}
+		}
+	}
+
+	fun refreshAudiobookHome() {
+		val session = _state.value.session ?: return
+		viewModelScope.launch {
+			_state.value = _state.value.copy(isLoadingAudiobooks = true, audiobookError = null)
+			runCatching { api.getAudiobookHome(session) }
+				.onSuccess { home -> _state.value = _state.value.copy(
+					audiobookHome = home,
+					audiobooks = if (_state.value.audiobookQuery.isBlank()) home.featured else _state.value.audiobooks,
+					isLoadingAudiobooks = false,
+				) }
+				.onFailure { error -> _state.value = _state.value.copy(isLoadingAudiobooks = false, audiobookError = error.message ?: "Could not load audiobooks") }
+		}
+	}
+
+	fun openAudiobook(book: Audiobook) {
+		val session = _state.value.session ?: return
+		viewModelScope.launch {
+			_state.value = _state.value.copy(isDetailLoading = true, detailError = null)
+			runCatching { api.getAudiobook(session, book.id) }
+				.onSuccess { detail -> _state.value = _state.value.copy(activeDetail = LibraryDetail.AudiobookPage(detail), isDetailLoading = false) }
+				.onFailure { error -> _state.value = _state.value.copy(isDetailLoading = false, detailError = error.message ?: "Could not load audiobook") }
+		}
+	}
+
+	fun resumeAudiobook(progress: AudiobookProgress) {
+		val session = _state.value.session ?: return
+		viewModelScope.launch {
+			runCatching { api.getAudiobook(session, progress.bookId) }
+				.onSuccess { detail ->
+					val queue = detail.chapters.map { it.toTrack(detail.book) }
+					val track = queue.firstOrNull { it.audiobookChapterId == progress.chapterId } ?: progress.toTrack()
+					playFromHere(track, queue.ifEmpty { listOf(track) })
+				}
+				.onFailure { playFromHere(progress.toTrack(), listOf(progress.toTrack())) }
+		}
+	}
+
 	private fun autoDownloadLatestEpisode(session: SavedSession, subscription: PodcastSubscription) {
 		viewModelScope.launch {
 			runCatching { api.getPodcastEpisodes(session, subscription.podcastId) }
@@ -368,7 +446,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
 			runCatching { api.getPodcastPreferences(session) }
 				.onSuccess { preferences ->
 					_state.value = _state.value.copy(podcastPreferences = preferences)
-					if (playerState.value.currentTrack?.externalKind == "podcast") {
+					if (playerState.value.currentTrack?.externalKind in setOf("podcast", "audiobook")) {
 						player.setPlaybackSpeed(preferences.defaultPlaybackSpeed)
 					}
 				}
@@ -689,22 +767,25 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
 			if (candidate.externalKind == "podcast") podcastDownloads.withLocalAudio(candidate) else candidate
 		}
         val startIndex = playableQueue.indexOfFirst { it.id == track.id }.takeIf { it >= 0 } ?: 0
-        val isPodcastQueue = playableQueue.any { it.externalKind == "podcast" }
-        if (_state.value.connectedPlaybackSessionId.isNotBlank() && !isPodcastQueue) {
+        val isLongformQueue = playableQueue.any { it.externalKind in setOf("podcast", "audiobook") }
+        if (_state.value.connectedPlaybackSessionId.isNotBlank() && !isLongformQueue) {
             sendRemoteQueue(playableQueue, startIndex)
             return
         }
-        if (isPodcastQueue) {
+        if (isLongformQueue) {
             _state.value = _state.value.copy(
                 connectedPlaybackSessionId = "",
                 connectedPlaybackDeviceName = "",
                 connectMessage = null,
             )
         }
-        val startPositionMs = track.takeIf { it.externalKind == "podcast" && !it.podcastCompleted }
-            ?.podcastProgressSeconds?.toLong()?.times(1000L) ?: 0L
+        val startPositionMs = when (track.externalKind) {
+			"podcast" -> track.takeUnless { it.podcastCompleted }?.podcastProgressSeconds?.toLong()?.times(1000L)
+			"audiobook" -> track.takeUnless { it.audiobookCompleted }?.audiobookProgressSeconds?.toLong()?.times(1000L)
+			else -> null
+		} ?: 0L
         player.playQueue(session, playableQueue, startIndex, startPositionMs)
-		if (isPodcastQueue) {
+		if (isLongformQueue) {
 			val podcastId = playableQueue[startIndex].podcastId
 			val speed = _state.value.podcastHome.subscriptions.firstOrNull { it.podcastId == podcastId }?.playbackSpeed
 				?: _state.value.podcastPreferences.defaultPlaybackSpeed
@@ -718,12 +799,12 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
         val session = _state.value.session ?: return
         val queue = playerState.value.queue.ifEmpty { listOf(track) }
         val startIndex = queue.indexOfFirst { it.id == track.id }.takeIf { it >= 0 } ?: 0
-        val isPodcastQueue = queue.any { it.externalKind == "podcast" }
-        if (_state.value.connectedPlaybackSessionId.isNotBlank() && !isPodcastQueue) {
+        val isLongformQueue = queue.any { it.externalKind in setOf("podcast", "audiobook") }
+        if (_state.value.connectedPlaybackSessionId.isNotBlank() && !isLongformQueue) {
             sendRemoteQueue(queue, startIndex)
             return
         }
-        if (isPodcastQueue) {
+        if (isLongformQueue) {
             _state.value = _state.value.copy(
                 connectedPlaybackSessionId = "",
                 connectedPlaybackDeviceName = "",
@@ -900,17 +981,38 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
     private fun reportPodcastProgress(playback: PlayerState, force: Boolean) {
         val session = _state.value.session ?: return
         val track = playback.currentTrack ?: return
-        if (track.externalKind != "podcast" || track.podcastId.isBlank() || track.podcastEpisodeId.isBlank() || track.streamUrl.isBlank()) return
+        val isAudiobook = track.externalKind == "audiobook"
+        if (track.externalKind !in setOf("podcast", "audiobook") || track.streamUrl.isBlank()) return
+        if (isAudiobook && (track.audiobookId.isBlank() || track.audiobookChapterId.isBlank())) return
+        if (!isAudiobook && (track.podcastId.isBlank() || track.podcastEpisodeId.isBlank())) return
         val position = (playback.positionMs / 1000L).toInt().coerceAtLeast(0)
         val duration = ((playback.durationMs.takeIf { it > 0L } ?: track.duration.toLong() * 1000L) / 1000L).toInt().coerceAtLeast(0)
-        val key = "${track.podcastId}:${track.podcastEpisodeId}"
+        val key = if (isAudiobook) "${track.audiobookId}:${track.audiobookChapterId}" else "${track.podcastId}:${track.podcastEpisodeId}"
         if (!force && lastPodcastReportKey == key && kotlin.math.abs(position - lastPodcastReportPosition) < 10) return
         if (lastPodcastReportKey == key && lastPodcastReportPosition == position) return
         lastPodcastReportKey = key
         lastPodcastReportPosition = position
         viewModelScope.launch {
-            runCatching {
-                api.updatePodcastProgress(
+            if (isAudiobook) {
+				runCatching {
+					api.updateAudiobookProgress(session, AudiobookProgress(
+						bookId = track.audiobookId,
+						chapterId = track.audiobookChapterId,
+						bookTitle = track.audiobookTitle.ifBlank { track.album.ifBlank { "Audiobook" } },
+						author = track.audiobookAuthor.ifBlank { track.artist },
+						chapterTitle = track.title,
+						chapterNumber = track.audiobookChapterNumber,
+						description = track.audiobookDescription,
+						imageUrl = track.imageUrl,
+						audioUrl = track.streamUrl,
+						websiteUrl = track.audiobookWebsiteUrl,
+						durationSeconds = duration,
+						positionSeconds = position,
+					))
+				}.onSuccess(::applyAudiobookProgress)
+					.onFailure { error -> lastPodcastReportKey = ""; Log.w("WaveNode", "Could not save audiobook progress", error) }
+			} else runCatching {
+				api.updatePodcastProgress(
                     session,
                     PodcastProgress(
                         podcastId = track.podcastId,
@@ -934,6 +1036,19 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                 }
         }
     }
+
+	private fun applyAudiobookProgress(saved: AudiobookProgress) {
+		val current = _state.value
+		val remaining = current.audiobookHome.continueListening.filterNot { it.bookId == saved.bookId }
+		val updated = if (saved.positionSeconds > 0 && !saved.completed) (listOf(saved) + remaining).take(12) else remaining
+		val detail = when (val active = current.activeDetail) {
+			is LibraryDetail.AudiobookPage -> active.copy(detail = active.detail.copy(chapters = active.detail.chapters.map { chapter ->
+				if (chapter.id == saved.chapterId) chapter.copy(progressSeconds = saved.positionSeconds, completed = saved.completed) else chapter
+			}))
+			else -> active
+		}
+		_state.value = current.copy(audiobookHome = current.audiobookHome.copy(continueListening = updated), activeDetail = detail)
+	}
 
     private fun applyPodcastProgress(saved: PodcastProgress) {
 		if (saved.completed && _state.value.podcastPreferences.autoDeletePlayed) {
@@ -1190,6 +1305,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
 
     fun logout() {
         podcastSearchJob?.cancel()
+		audiobookSearchJob?.cancel()
         sessionStore.clear()
         _state.value = AppState()
     }
@@ -1277,6 +1393,50 @@ private fun PodcastProgress.toTrack(): Track {
         createdAt = publishedAt.orEmpty(),
     )
 }
+
+private fun AudiobookChapter.toTrack(book: Audiobook): Track = Track(
+	id = "audiobook:${book.id}:$id",
+	title = title.ifBlank { "Chapter $number" },
+	artist = book.author,
+	album = book.title,
+	genre = "Audiobook",
+	duration = durationSeconds,
+	imageUrl = book.imageUrl,
+	streamUrl = audioUrl,
+	isExternal = true,
+	externalKind = "audiobook",
+	audiobookId = book.id,
+	audiobookTitle = book.title,
+	audiobookAuthor = book.author,
+	audiobookChapterId = id,
+	audiobookChapterNumber = number,
+	audiobookDescription = book.description,
+	audiobookWebsiteUrl = book.websiteUrl,
+	audiobookProgressSeconds = progressSeconds,
+	audiobookCompleted = completed,
+)
+
+private fun AudiobookProgress.toTrack(): Track = Track(
+	id = "audiobook:$bookId:$chapterId",
+	title = chapterTitle,
+	artist = author,
+	album = bookTitle,
+	genre = "Audiobook",
+	duration = durationSeconds,
+	imageUrl = imageUrl,
+	streamUrl = audioUrl,
+	isExternal = true,
+	externalKind = "audiobook",
+	audiobookId = bookId,
+	audiobookTitle = bookTitle,
+	audiobookAuthor = author,
+	audiobookChapterId = chapterId,
+	audiobookChapterNumber = chapterNumber,
+	audiobookDescription = description,
+	audiobookWebsiteUrl = websiteUrl,
+	audiobookProgressSeconds = positionSeconds,
+	audiobookCompleted = completed,
+)
 
 private fun List<UserSession>.visibleConnectSessions(currentSessionId: String): List<UserSession> {
     val activeSince = Instant.now().minus(Duration.ofMinutes(15))

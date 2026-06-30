@@ -80,6 +80,24 @@ data class Track(
     val podcastProgressSeconds: Int = 0,
     @SerialName("podcast_completed")
     val podcastCompleted: Boolean = false,
+    @SerialName("audiobook_id")
+    val audiobookId: String = "",
+    @SerialName("audiobook_title")
+    val audiobookTitle: String = "",
+    @SerialName("audiobook_author")
+    val audiobookAuthor: String = "",
+    @SerialName("audiobook_chapter_id")
+    val audiobookChapterId: String = "",
+    @SerialName("audiobook_chapter_number")
+    val audiobookChapterNumber: Int = 0,
+    @SerialName("audiobook_description")
+    val audiobookDescription: String = "",
+    @SerialName("audiobook_website_url")
+    val audiobookWebsiteUrl: String = "",
+    @SerialName("audiobook_progress_seconds")
+    val audiobookProgressSeconds: Int = 0,
+    @SerialName("audiobook_completed")
+    val audiobookCompleted: Boolean = false,
     @SerialName("upload_order")
     val uploadOrder: Long = 0L,
     @SerialName("created_at")
@@ -377,6 +395,63 @@ data class PodcastHomeResponse(
     @SerialName("continue_listening") val continueListening: List<PodcastProgress> = emptyList(),
     @SerialName("top_podcasts") val topPodcasts: List<Podcast> = emptyList(),
 	val subscriptions: List<PodcastSubscription> = emptyList(),
+)
+
+@Serializable
+data class Audiobook(
+    val id: String,
+    val title: String = "",
+    val author: String = "",
+    val description: String = "",
+    @SerialName("image_url") val imageUrl: String = "",
+    @SerialName("website_url") val websiteUrl: String = "",
+    val language: String = "",
+    @SerialName("copyright_year") val copyrightYear: String = "",
+    @SerialName("chapter_count") val chapterCount: Int = 0,
+    @SerialName("duration_seconds") val durationSeconds: Int = 0,
+    val genres: List<String> = emptyList(),
+)
+
+@Serializable
+data class AudiobookChapter(
+    val id: String,
+    val number: Int = 0,
+    val title: String = "",
+    @SerialName("audio_url") val audioUrl: String = "",
+    @SerialName("duration_seconds") val durationSeconds: Int = 0,
+    val readers: List<String> = emptyList(),
+    @SerialName("progress_seconds") val progressSeconds: Int = 0,
+    val completed: Boolean = false,
+)
+
+@Serializable
+data class AudiobookDetail(
+    val book: Audiobook,
+    val chapters: List<AudiobookChapter> = emptyList(),
+)
+
+@Serializable
+data class AudiobookProgress(
+    @SerialName("book_id") val bookId: String,
+    @SerialName("chapter_id") val chapterId: String,
+    @SerialName("book_title") val bookTitle: String,
+    val author: String = "",
+    @SerialName("chapter_title") val chapterTitle: String,
+    @SerialName("chapter_number") val chapterNumber: Int = 0,
+    val description: String = "",
+    @SerialName("image_url") val imageUrl: String = "",
+    @SerialName("audio_url") val audioUrl: String,
+    @SerialName("website_url") val websiteUrl: String = "",
+    @SerialName("duration_seconds") val durationSeconds: Int = 0,
+    @SerialName("position_seconds") val positionSeconds: Int = 0,
+    val completed: Boolean = false,
+    @SerialName("updated_at") val updatedAt: String = "",
+)
+
+@Serializable
+data class AudiobookHome(
+    @SerialName("continue_listening") val continueListening: List<AudiobookProgress> = emptyList(),
+    val featured: List<Audiobook> = emptyList(),
 )
 
 data class SavedSession(

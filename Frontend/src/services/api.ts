@@ -79,7 +79,7 @@ export interface Music {
   updated_at: string
   stream_url?: string
   is_external?: boolean
-  external_kind?: 'radio' | 'podcast'
+  external_kind?: 'radio' | 'podcast' | 'audiobook'
   podcast_id?: string
   podcast_title?: string
   podcast_publisher?: string
@@ -88,6 +88,13 @@ export interface Music {
   podcast_website_url?: string
 	podcast_chapters_url?: string
 	podcast_chapters_type?: string
+	audiobook_id?: string
+	audiobook_title?: string
+	audiobook_author?: string
+	audiobook_chapter_id?: string
+	audiobook_chapter_number?: number
+	audiobook_description?: string
+	audiobook_website_url?: string
 }
 
 export interface LyricLine {
@@ -351,6 +358,58 @@ export interface PodcastEpisodesResponse {
   podcast: PodcastSearchResult
   count: number
   episodes: PodcastEpisode[]
+}
+
+export interface AudiobookSummary {
+  id: string
+  title: string
+  author: string
+  description: string
+  image_url: string
+  website_url: string
+  language: string
+  copyright_year: string
+  chapter_count: number
+  duration_seconds: number
+  genres: string[]
+}
+
+export interface AudiobookChapter {
+  id: string
+  number: number
+  title: string
+  audio_url: string
+  duration_seconds: number
+  readers: string[]
+  progress_seconds: number
+  completed: boolean
+}
+
+export interface AudiobookDetail {
+  book: AudiobookSummary
+  chapters: AudiobookChapter[]
+}
+
+export interface AudiobookProgress {
+  book_id: string
+  chapter_id: string
+  book_title: string
+  author: string
+  chapter_title: string
+  chapter_number: number
+  description: string
+  image_url: string
+  audio_url: string
+  website_url: string
+  duration_seconds: number
+  position_seconds: number
+  completed: boolean
+  updated_at: string
+}
+
+export interface AudiobookHome {
+  continue_listening: AudiobookProgress[]
+  featured: AudiobookSummary[]
 }
 
 export interface UserSession {
@@ -1088,6 +1147,27 @@ export const podcastsAPI = {
 		const response = await api.get<APIResponse<{ chapters: PodcastChapter[] }>>('/podcasts/chapters', { params: { url: chaptersUrl } })
 		return response.data.data?.chapters || []
 	},
+}
+
+export const audiobooksAPI = {
+  getHome: async (): Promise<AudiobookHome> => {
+    const response = await api.get<APIResponse<AudiobookHome>>('/audiobooks/home')
+    return response.data.data || { continue_listening: [], featured: [] }
+  },
+  search: async (query: string): Promise<AudiobookSummary[]> => {
+    const response = await api.get<APIResponse<AudiobookSummary[]>>('/audiobooks/search', { params: { q: query, limit: 24 } })
+    return response.data.data || []
+  },
+  get: async (bookId: string): Promise<AudiobookDetail> => {
+    const response = await api.get<APIResponse<AudiobookDetail>>(`/audiobooks/${encodeURIComponent(bookId)}`)
+    if (!response.data.data) throw new Error(response.data.error || 'Audiobook could not be loaded')
+    return response.data.data
+  },
+  updateProgress: async (progress: Omit<AudiobookProgress, 'updated_at' | 'completed'>): Promise<AudiobookProgress> => {
+    const response = await api.put<APIResponse<AudiobookProgress>>('/audiobooks/progress', progress)
+    if (!response.data.data) throw new Error(response.data.error || 'Audiobook progress could not be saved')
+    return response.data.data
+  },
 }
 
 export const outputsAPI = {

@@ -26,6 +26,17 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Optional internet deployment with automatic HTTPS certificates through Caddy.
 - First-run setup access codes for preventing remote administrator-account claims.
 
+## 0.1.5 - 2026-06-30
+
+### Added
+
+- Online public-domain audiobook browsing and search through LibriVox on web and Android.
+- Chapter playback from Internet Archive with covers, next/previous controls, seeking, speed, sleep timers, and per-user continue-listening progress.
+
+### Fixed
+
+- Android no longer crashes when opening the Google Cast route chooser from the Connect sheet.
+
 ## 0.1.4 - 2026-06-30
 
 ### Added

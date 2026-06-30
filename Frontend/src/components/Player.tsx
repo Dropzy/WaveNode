@@ -712,8 +712,8 @@ export const Player: React.FC = () => {
   } = useAudio();
 
   const artworkUrl = getTrackArtworkUrl(currentTrack);
-  const isRadioStream = Boolean(currentTrack?.is_external && currentTrack.stream_url && currentTrack.external_kind !== 'podcast');
-  const isPodcast = currentTrack?.external_kind === 'podcast';
+  const isLongform = currentTrack?.external_kind === 'podcast' || currentTrack?.external_kind === 'audiobook';
+  const isRadioStream = Boolean(currentTrack?.is_external && currentTrack.stream_url && !isLongform);
 	const currentChapter = podcastChapters.reduce<PodcastChapter | null>((active, chapter) => chapter.startTime <= currentTime ? chapter : active, null);
   const displayDuration = isRadioStream ? duration : (Number.isFinite(duration) && duration > 0 ? duration : currentTrack?.duration || 0);
   const displayTitle = isRadioStream && radioStreamTitle ? radioStreamTitle : currentTrack?.title;
@@ -1130,7 +1130,7 @@ export const Player: React.FC = () => {
       {/* Player Controls - Centered on mobile */}
       <PlayerControls>
         <ControlButtons>
-		  {isPodcast ? podcastControlButtons : <>
+		  {isLongform ? podcastControlButtons : <>
           <IconButton 
             className={`hide-on-mobile ${state.isShuffled ? 'active' : ''}`}
             onClick={toggleShuffle}
@@ -1168,7 +1168,7 @@ export const Player: React.FC = () => {
           </ProgressTrack>
           <Time>{formatTime(displayDuration)}</Time>
         </ProgressBar>
-		{isPodcast && podcastOptions}
+		{isLongform && podcastOptions}
       </PlayerControls>
 
       {/* Desktop Layout */}
@@ -1221,7 +1221,7 @@ export const Player: React.FC = () => {
         <DesktopPlayerControls>
 		  <DesktopTransportRow>
           <ControlButtons>
-			{isPodcast ? podcastControlButtons : <>
+			{isLongform ? podcastControlButtons : <>
             <IconButton 
               className={state.isShuffled ? 'active' : ''} 
               onClick={toggleShuffle}
@@ -1250,7 +1250,7 @@ export const Player: React.FC = () => {
             </IconButton>
 			</>}
           </ControlButtons>
-		  {isPodcast && podcastOptions}
+		  {isLongform && podcastOptions}
 		  </DesktopTransportRow>
           <ProgressBar>
             <Time>{formatTime(currentTime)}</Time>
