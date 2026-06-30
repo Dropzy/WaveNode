@@ -112,7 +112,7 @@ For secure internet access, WaveNode includes an optional Caddy gateway that obt
 
 ## Project Status
 
-WaveNode `v0.1.3` is the current stable release. Docker/web playback is the primary server release target. The Electron desktop client and Android client are included as companion clients for connecting to an existing WaveNode server.
+WaveNode `v0.1.4` is the current stable release. Docker/web playback is the primary server release target. The Electron desktop client and Android client are included as companion clients for connecting to an existing WaveNode server.
 
 ## Community
 

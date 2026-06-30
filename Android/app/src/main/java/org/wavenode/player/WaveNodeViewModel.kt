@@ -16,6 +16,7 @@ import org.wavenode.player.data.Artist
 import org.wavenode.player.data.DiscoveredServer
 import org.wavenode.player.data.Playlist
 import org.wavenode.player.data.OutputDevice
+import org.wavenode.player.data.Lyrics
 import org.wavenode.player.data.Podcast
 import org.wavenode.player.data.PodcastEpisode
 import org.wavenode.player.data.PodcastDownloadStore
@@ -63,6 +64,10 @@ data class AppState(
     val connectMessage: String? = null,
 	val outputDevices: List<OutputDevice> = emptyList(),
 	val isLoadingOutputDevices: Boolean = false,
+    val lyrics: Lyrics? = null,
+    val lyricsTrackId: String = "",
+    val isLoadingLyrics: Boolean = false,
+    val lyricsError: String? = null,
     val activeDetail: LibraryDetail? = null,
     val isDetailLoading: Boolean = false,
     val detailError: String? = null,
@@ -1042,6 +1047,29 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
 				.onFailure { error -> _state.value = _state.value.copy(connectMessage = error.message ?: "Could not prepare Google Cast") }
 		}
 	}
+
+    fun loadLyrics(track: Track) {
+        val session = _state.value.session ?: return
+        if (track.isExternal) {
+            _state.value = _state.value.copy(lyrics = null, lyricsTrackId = track.id, lyricsError = "Lyrics are unavailable for this source")
+            return
+        }
+        if (_state.value.lyricsTrackId == track.id && (_state.value.lyrics != null || _state.value.isLoadingLyrics)) return
+        _state.value = _state.value.copy(lyrics = null, lyricsTrackId = track.id, isLoadingLyrics = true, lyricsError = null)
+        viewModelScope.launch {
+            runCatching { api.getLyrics(session, track.id) }
+                .onSuccess { lyrics ->
+                    if (_state.value.lyricsTrackId == track.id) {
+                        _state.value = _state.value.copy(lyrics = lyrics, isLoadingLyrics = false)
+                    }
+                }
+                .onFailure { error ->
+                    if (_state.value.lyricsTrackId == track.id) {
+                        _state.value = _state.value.copy(isLoadingLyrics = false, lyricsError = error.message ?: "Lyrics could not be loaded")
+                    }
+                }
+        }
+    }
 
 	fun playOnOutputDevice(deviceId: String) {
 		val session = _state.value.session ?: return

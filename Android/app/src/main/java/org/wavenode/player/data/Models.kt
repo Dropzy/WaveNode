@@ -87,6 +87,23 @@ data class Track(
 )
 
 @Serializable
+data class LyricLine(
+    @SerialName("time_ms") val timeMs: Long,
+    val text: String,
+)
+
+@Serializable
+data class Lyrics(
+    @SerialName("track_id") val trackId: String,
+    val available: Boolean = false,
+    val synced: Boolean = false,
+    val instrumental: Boolean = false,
+    @SerialName("plain_text") val plainText: String = "",
+    val lines: List<LyricLine> = emptyList(),
+    val source: String = "",
+)
+
+@Serializable
 data class Album(
     val id: String = "",
     val name: String,

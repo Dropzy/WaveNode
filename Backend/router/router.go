@@ -50,6 +50,7 @@ type Router struct {
 	playbackHandoffs  sync.Map
 	castTokens        sync.Map
 	outputDevices     sync.Map
+	lyricsCache       sync.Map
 	corsConfig        struct {
 		AllowedOrigins []string `json:"allowed_origins"`
 		AllowedMethods []string `json:"allowed_methods"`
@@ -143,6 +144,7 @@ func (r *Router) SetupRoutes() *mux.Router {
 	protected.HandleFunc("/music/search", r.musicHandler.SearchMusic).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/music/search/comprehensive", r.musicHandler.ComprehensiveSearch).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/music/{id}", r.musicHandler.GetMusic).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/music/{id}/lyrics", r.getLyrics).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/music/{id}/stream", r.musicHandler.StreamMusic).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/music/{id}/download", r.musicHandler.DownloadMusic).Methods("GET", "OPTIONS")
 	// Artwork serving route (public - no auth required)

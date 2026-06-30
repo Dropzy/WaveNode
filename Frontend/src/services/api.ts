@@ -90,6 +90,21 @@ export interface Music {
 	podcast_chapters_type?: string
 }
 
+export interface LyricLine {
+  time_ms: number
+  text: string
+}
+
+export interface Lyrics {
+  track_id: string
+  available: boolean
+  synced: boolean
+  instrumental: boolean
+  plain_text: string
+  lines: LyricLine[]
+  source: 'local' | 'lrclib' | ''
+}
+
 export interface PluginRowItem {
   id: string
   title: string
@@ -650,6 +665,14 @@ export const musicAPI = {
   getMusic: async (id: string): Promise<Music | null> => {
     const response = await api.get<APIResponse<Music>>(`/music/${id}`)
     return response.data.data || null
+  },
+
+  getLyrics: async (id: string): Promise<Lyrics> => {
+    const response = await api.get<APIResponse<Lyrics>>(`/music/${id}/lyrics`)
+    if (!response.data.data) {
+      throw new Error(response.data.error || 'Lyrics could not be loaded')
+    }
+    return response.data.data
   },
 
   searchMusic: async (query: string): Promise<Music[]> => {

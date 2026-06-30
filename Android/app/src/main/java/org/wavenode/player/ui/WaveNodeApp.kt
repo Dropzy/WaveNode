@@ -8,6 +8,7 @@ import android.content.res.Configuration
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
+import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -25,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -127,6 +130,7 @@ import com.google.android.gms.cast.framework.CastButtonFactory
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -142,6 +146,7 @@ import org.wavenode.player.data.DiscoveredServer
 import org.wavenode.player.data.Playlist
 import org.wavenode.player.data.Podcast
 import org.wavenode.player.data.OutputDevice
+import org.wavenode.player.data.Lyrics
 import org.wavenode.player.data.PodcastEpisode
 import org.wavenode.player.data.PodcastHomeResponse
 import org.wavenode.player.data.PodcastProgress
@@ -213,6 +218,7 @@ fun WaveNodeApp(
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSeekTo: (Long) -> Unit,
+    onLoadLyrics: (Track) -> Unit,
 	onSkipPodcastBack: () -> Unit,
 	onSkipPodcastForward: () -> Unit,
 	onSetPodcastPlaybackSpeed: (Float) -> Unit,
@@ -265,6 +271,7 @@ fun WaveNodeApp(
             onSkipNext = onSkipNext,
             onSkipPrevious = onSkipPrevious,
             onSeekTo = onSeekTo,
+            onLoadLyrics = onLoadLyrics,
 			onSkipPodcastBack = onSkipPodcastBack,
 			onSkipPodcastForward = onSkipPodcastForward,
 			onSetPodcastPlaybackSpeed = onSetPodcastPlaybackSpeed,
@@ -473,6 +480,7 @@ private fun MainShell(
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSeekTo: (Long) -> Unit,
+    onLoadLyrics: (Track) -> Unit,
 	onSkipPodcastBack: () -> Unit,
 	onSkipPodcastForward: () -> Unit,
 	onSetPodcastPlaybackSpeed: (Float) -> Unit,
@@ -817,6 +825,10 @@ private fun MainShell(
             onSkipNext = onSkipNext,
             onSkipPrevious = onSkipPrevious,
             onSeekTo = onSeekTo,
+            onLoadLyrics = onLoadLyrics,
+            lyrics = state.lyrics.takeIf { state.lyricsTrackId == playerState.currentTrack?.id },
+            isLoadingLyrics = state.isLoadingLyrics && state.lyricsTrackId == playerState.currentTrack?.id,
+            lyricsError = state.lyricsError.takeIf { state.lyricsTrackId == playerState.currentTrack?.id },
             onOpenQueue = { showQueue = true },
             onToggleShuffle = onToggleShuffle,
             onCycleRepeatMode = onCycleRepeatMode,
@@ -1633,7 +1645,21 @@ private fun PodcastContinueCard(progress: PodcastProgress, playerState: PlayerSt
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(progress.podcastTitle, color = WaveText, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(progress.episodeTitle, color = WaveSubtle, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth().height(3.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .clip(CircleShape)
+                    .background(WaveSurfaceRaised),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(fraction)
+                        .fillMaxHeight()
+                        .background(WaveAccent),
+                )
+            }
             Text("${formatDuration(((duration - position).coerceAtLeast(0)).toLong() * 1000L)} left", color = WaveSubtle, fontSize = 11.sp)
         }
     }
@@ -3207,6 +3233,10 @@ private fun NowPlayingSheet(
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSeekTo: (Long) -> Unit,
+    onLoadLyrics: (Track) -> Unit,
+    lyrics: Lyrics?,
+    isLoadingLyrics: Boolean,
+    lyricsError: String?,
     onOpenQueue: () -> Unit,
     connectSessions: List<UserSession>,
     currentSessionId: String,
@@ -3243,6 +3273,7 @@ private fun NowPlayingSheet(
         ?.let { "Playing on $it" }
         ?: "Connect to a device"
     var showOutputPicker by remember { mutableStateOf(false) }
+    var showLyrics by remember(track.id) { mutableStateOf(false) }
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     Surface(
@@ -3273,6 +3304,7 @@ private fun NowPlayingSheet(
                 onSkipNext = onSkipNext,
                 onSkipPrevious = onSkipPrevious,
                 onSeekTo = onSeekTo,
+                onShowLyrics = { onLoadLyrics(track); showLyrics = true },
                 onOpenQueue = onOpenQueue,
                 connectSessions = connectSessions,
                 currentSessionId = currentSessionId,
@@ -3494,6 +3526,16 @@ private fun NowPlayingSheet(
                         tint = if (isRadio) WaveSubtle.copy(alpha = 0.35f) else WaveSubtle,
                     )
                 }
+                IconButton(
+                    onClick = { onLoadLyrics(track); showLyrics = true },
+                    enabled = !track.isExternal,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Notes,
+                        contentDescription = "Lyrics",
+                        tint = if (track.isExternal) WaveSubtle.copy(alpha = 0.35f) else WaveSubtle,
+                    )
+                }
             }
             if (showOutputPicker) {
                 ConnectDeviceSheet(
@@ -3514,6 +3556,17 @@ private fun NowPlayingSheet(
             Spacer(modifier = Modifier.height(2.dp))
             }
         }
+    }
+    if (showLyrics) {
+        LyricsSheet(
+            track = track,
+            lyrics = lyrics,
+            isLoading = isLoadingLyrics,
+            error = lyricsError,
+            positionMs = positionMs,
+            onSeekTo = onSeekTo,
+            onDismiss = { showLyrics = false },
+        )
     }
 }
 
@@ -3537,6 +3590,7 @@ private fun LandscapeNowPlaying(
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSeekTo: (Long) -> Unit,
+    onShowLyrics: () -> Unit,
     onOpenQueue: () -> Unit,
     connectSessions: List<UserSession>,
     currentSessionId: String,
@@ -3716,6 +3770,13 @@ private fun LandscapeNowPlaying(
                         tint = if (isRadio) WaveSubtle.copy(alpha = 0.35f) else WaveSubtle,
                     )
                 }
+                IconButton(onClick = onShowLyrics, enabled = !track.isExternal) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Notes,
+                        contentDescription = "Lyrics",
+                        tint = if (track.isExternal) WaveSubtle.copy(alpha = 0.35f) else WaveSubtle,
+                    )
+                }
             }
         }
     }
@@ -3734,6 +3795,99 @@ private fun LandscapeNowPlaying(
 			isLoadingOutputDevices = isLoadingOutputDevices,
             onDismiss = onHideOutputPicker,
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LyricsSheet(
+    track: Track,
+    lyrics: Lyrics?,
+    isLoading: Boolean,
+    error: String?,
+    positionMs: Long,
+    onSeekTo: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val listState = rememberLazyListState()
+    val activeIndex = if (lyrics?.synced == true) {
+        lyrics.lines.indexOfLast { it.timeMs <= positionMs }
+    } else {
+        -1
+    }
+    LaunchedEffect(activeIndex, lyrics?.trackId) {
+        if (activeIndex >= 0) listState.animateScrollToItem(activeIndex, -180)
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = WaveSurface,
+        contentColor = WaveText,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 320.dp, max = 720.dp)
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp),
+        ) {
+            Text("Lyrics", color = WaveText, fontSize = 24.sp, fontWeight = FontWeight.Black)
+            Text(
+                text = "${track.title} - ${track.artist}",
+                color = WaveSubtle,
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            when {
+                isLoading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = WaveAccent)
+                }
+                error != null -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(error, color = WaveSubtle, textAlign = TextAlign.Center)
+                }
+                lyrics?.instrumental == true -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Instrumental track", color = WaveSubtle)
+                }
+                lyrics?.available != true -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Lyrics are not available for this track.", color = WaveSubtle)
+                }
+                lyrics.synced && lyrics.lines.isNotEmpty() -> LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 24.dp),
+                ) {
+                    itemsIndexed(lyrics.lines, key = { index, line -> "${line.timeMs}:$index" }) { index, line ->
+                        Text(
+                            text = line.text.ifBlank { " " },
+                            color = when {
+                                index == activeIndex -> WaveAccent
+                                index < activeIndex -> WaveText
+                                else -> WaveSubtle
+                            },
+                            fontSize = if (index == activeIndex) 22.sp else 17.sp,
+                            fontWeight = if (index == activeIndex) FontWeight.Black else FontWeight.SemiBold,
+                            lineHeight = 28.sp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSeekTo(line.timeMs) }
+                                .padding(vertical = 8.dp),
+                        )
+                    }
+                }
+                else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    item {
+                        Text(
+                            text = lyrics.plainText,
+                            color = WaveText,
+                            fontSize = 17.sp,
+                            lineHeight = 29.sp,
+                            modifier = Modifier.padding(vertical = 20.dp),
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -3979,9 +4133,11 @@ private fun ConnectDeviceSheet(
 				}
 				AndroidView(
 					factory = { context ->
-						MediaRouteButton(context).also { button ->
-							button.isEnabled = runCatching { CastButtonFactory.setUpMediaRouteButton(context, button) }.isSuccess
-						}
+						runCatching {
+							MediaRouteButton(context).also { button ->
+								CastButtonFactory.setUpMediaRouteButton(context, button)
+							}
+						}.getOrElse { View(context) }
 					},
 					modifier = Modifier.size(48.dp),
 				)

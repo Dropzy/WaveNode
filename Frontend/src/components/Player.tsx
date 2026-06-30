@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { useAudio } from '../contexts/AudioContext'
 import { Queue } from './Queue'
+import { LyricsPanel } from './LyricsPanel'
 import { accountAPI, likedTracksAPI, outputsAPI, pluginsAPI, podcastsAPI, ratingsAPI, type OutputDevice, type PodcastChapter, UserSession } from '../services/api'
 import { audioService } from '../services/audioService'
 import { castService } from '../services/castService'
@@ -667,6 +668,7 @@ const ConnectMessage = styled.div`
 
 export const Player: React.FC = () => {
   const [isQueueOpen, setIsQueueOpen] = useState(false);
+  const [isLyricsOpen, setIsLyricsOpen] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [rating, setRating] = useState(0);
   const [radioStreamTitle, setRadioStreamTitle] = useState('');
@@ -1113,7 +1115,14 @@ export const Player: React.FC = () => {
             </MobileArtistName>
           </MobileTrackDetails>
         </MobileTrackInfo>
-        <MobileMoreButton onClick={() => setIsQueueOpen(true)} title="Open queue">
+        <MobileMoreButton
+          onClick={() => { setIsQueueOpen(false); setIsLyricsOpen(true) }}
+          title="Open lyrics"
+          disabled={!currentTrack || currentTrack.is_external}
+        >
+          <Mic2 size={20} />
+        </MobileMoreButton>
+        <MobileMoreButton onClick={() => { setIsLyricsOpen(false); setIsQueueOpen(true) }} title="Open queue">
           <MoreHorizontal size={20} />
         </MobileMoreButton>
       </TopRow>
@@ -1255,7 +1264,12 @@ export const Player: React.FC = () => {
         </DesktopPlayerControls>
 
         <ExtraControls>
-          <IconButton disabled title="Lyrics are not available yet">
+          <IconButton
+            className={isLyricsOpen ? 'active' : ''}
+            disabled={!currentTrack || currentTrack.is_external}
+            onClick={() => { setIsQueueOpen(false); setIsLyricsOpen(open => !open) }}
+            title={isLyricsOpen ? 'Close lyrics' : 'Open lyrics'}
+          >
             <Mic2 size={16} />
           </IconButton>
           <ConnectControl ref={connectControlRef}>
@@ -1321,7 +1335,7 @@ export const Player: React.FC = () => {
           </ConnectControl>
           <IconButton
             className={isQueueOpen ? 'active' : ''}
-            onClick={() => setIsQueueOpen(!isQueueOpen)}
+            onClick={() => { setIsLyricsOpen(false); setIsQueueOpen(!isQueueOpen) }}
             title={isQueueOpen ? 'Close queue' : 'Open queue'}
           >
             <List size={16} />
@@ -1350,6 +1364,13 @@ export const Player: React.FC = () => {
       </DesktopLayout>
       
       <Queue isOpen={isQueueOpen} onClose={() => setIsQueueOpen(false)} />
+      <LyricsPanel
+        isOpen={isLyricsOpen}
+        track={currentTrack}
+        currentTime={currentTime}
+        onSeek={seekTo}
+        onClose={() => setIsLyricsOpen(false)}
+      />
     </PlayerContainer>
   )
 }

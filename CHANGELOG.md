@@ -26,6 +26,19 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Optional internet deployment with automatic HTTPS certificates through Caddy.
 - First-run setup access codes for preventing remote administrator-account claims.
 
+## 0.1.4 - 2026-06-30
+
+### Added
+
+- Time-synced lyrics on web and Android with active-line scrolling and seekable lyric lines.
+- Plain-text lyric fallback, local `.lrc` and `.txt` sidecar support, and keyless LRCLIB lookup.
+- Lyrics responses for Subsonic and OpenSubsonic-compatible clients.
+
+### Fixed
+
+- Android Connect sheet crashes caused by MediaRouter theme and initialization failures.
+- Misleading end-stop color on Android podcast progress cards.
+
 ## 0.1.3 - 2026-06-30
 
 ### Added

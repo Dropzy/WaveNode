@@ -123,9 +123,9 @@ func (r *Router) subsonicAPI(w http.ResponseWriter, req *http.Request) {
 	case "getVideoInfo":
 		err = notFoundSubsonicError("Video")
 	case "getLyrics":
-		data = map[string]interface{}{"lyrics": map[string]interface{}{"artist": req.FormValue("artist"), "title": req.FormValue("title"), "value": ""}}
+		data = r.subsonicLyrics(req)
 	case "getLyricsBySongId":
-		data = map[string]interface{}{"lyricsList": map[string]interface{}{"structuredLyrics": []interface{}{}}}
+		data = r.subsonicStructuredLyrics(req)
 	case "setRating":
 		err = r.subsonicSetRating(user, req)
 	case "getBookmarks":

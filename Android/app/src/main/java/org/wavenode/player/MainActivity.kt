@@ -77,6 +77,7 @@ class MainActivity : ComponentActivity() {
                     onSkipNext = viewModel::skipNext,
                     onSkipPrevious = viewModel::skipPrevious,
                     onSeekTo = viewModel::seekTo,
+					onLoadLyrics = viewModel::loadLyrics,
 					onSkipPodcastBack = viewModel::skipPodcastBack,
 					onSkipPodcastForward = viewModel::skipPodcastForward,
 					onSetPodcastPlaybackSpeed = viewModel::setPodcastPlaybackSpeed,

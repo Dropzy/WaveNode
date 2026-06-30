@@ -57,6 +57,10 @@ class WaveNodeApi(
         getList(session, "/api/music", "Could not load tracks")
     }
 
+    suspend fun getLyrics(session: SavedSession, trackId: String): Lyrics = withContext(Dispatchers.IO) {
+        getObject(session, "/api/music/${pathSegment(trackId)}/lyrics", "Lyrics could not be loaded")
+    }
+
     suspend fun getAlbums(session: SavedSession): List<Album> = withContext(Dispatchers.IO) {
         getList(session, "/api/albums", "Could not load albums")
     }

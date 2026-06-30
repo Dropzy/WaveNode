@@ -3,13 +3,13 @@ services:
     build:
       context: ./Backend
       args:
-        VERSION: ${WAVENODE_VERSION:-0.1.3}
+        VERSION: ${WAVENODE_VERSION:-0.1.4}
 
   frontend:
     build:
       context: ./Frontend
       args:
-        VERSION: ${WAVENODE_VERSION:-0.1.3}
+        VERSION: ${WAVENODE_VERSION:-0.1.4}
 
   updater:
     build:
