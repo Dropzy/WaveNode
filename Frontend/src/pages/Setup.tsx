@@ -379,7 +379,19 @@ const Setup = ({ status }: SetupProps) => {
                   <Folder size={20} /><span>{directory.name}</span><ChevronRight size={18} />
                 </DirectoryButton>
               ))}
-              {!pickerLoading && directoryData?.directories.length === 0 && <PickerState>This folder has no subfolders.</PickerState>}
+              {!pickerLoading && pickerTarget === 'music' && directoryData?.audio_files?.map(file => (
+                <AudioFileRow key={file.path} title={file.path}>
+                  <Music2 size={19} />
+                  <span>{file.name}</span>
+                  <AudioFileMeta>{file.format} · {formatPickerBytes(file.size)}</AudioFileMeta>
+                </AudioFileRow>
+              ))}
+              {!pickerLoading && directoryData?.directories.length === 0 && (pickerTarget !== 'music' || !directoryData.audio_files?.length) && (
+                <PickerState>{pickerTarget === 'music' ? 'This folder has no subfolders or supported audio tracks.' : 'This folder has no subfolders.'}</PickerState>
+              )}
+              {!pickerLoading && pickerTarget === 'music' && directoryData?.audio_files_truncated && (
+                <PickerNote>Showing the first {directoryData.audio_files?.length || 0} of {directoryData.audio_file_count} audio tracks.</PickerNote>
+              )}
             </DirectoryList>
             <ModalActions>
               <BackButton type="button" onClick={() => setPickerTarget(null)}>Cancel</BackButton>
@@ -397,6 +409,13 @@ const Setup = ({ status }: SetupProps) => {
 const readError = (error: unknown, fallback: string) => {
   const apiError = error as { response?: { data?: { error?: string } }; message?: string }
   return apiError.response?.data?.error || apiError.message || fallback
+}
+
+const formatPickerBytes = (value: number) => {
+  if (!value) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const unit = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1)
+  return `${(value / (1024 ** unit)).toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`
 }
 
 const Page = styled.main`
@@ -490,6 +509,9 @@ const RootButtons = styled.div`display: flex; flex-wrap: wrap; gap: 7px; padding
 const RootButton = styled.button`padding: 6px 10px; border: 1px solid #343a36; color: #cbd1cd; border-radius: 7px; &:hover { border-color: ${({ theme }) => theme.colors.accentHover}; }`
 const DirectoryList = styled.div`min-height: 240px; overflow: auto; padding: 8px 18px;`
 const DirectoryButton = styled.button`width: 100%; display: flex; align-items: center; gap: 11px; padding: 12px; color: #e1e5e2; border-radius: 8px; text-align: left; span { flex: 1; } &:hover { background: #242925; }`
+const AudioFileRow = styled.div`width: 100%; display: flex; align-items: center; gap: 11px; padding: 12px; color: #bcc5be; span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }`
+const AudioFileMeta = styled.small`color: #727b75; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; text-transform: uppercase;`
+const PickerNote = styled.div`padding: 10px 12px; color: #858d87; font-size: 12px; text-align: center;`
 const PickerState = styled.div`min-height: 180px; display: flex; align-items: center; justify-content: center; gap: 9px; color: #8e9790;`
 const ModalActions = styled.div`display: flex; justify-content: flex-end; gap: 12px; padding: 16px 18px; border-top: 1px solid #2a302c;`
 

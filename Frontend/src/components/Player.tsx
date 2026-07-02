@@ -3,7 +3,7 @@ import styled from 'styled-components'
 import { useAudio } from '../contexts/AudioContext'
 import { Queue } from './Queue'
 import { LyricsPanel } from './LyricsPanel'
-import { accountAPI, likedTracksAPI, outputsAPI, pluginsAPI, podcastsAPI, ratingsAPI, type OutputDevice, type PodcastChapter, UserSession } from '../services/api'
+import { accountAPI, likedTracksAPI, outputsAPI, pluginsAPI, podcastsAPI, radioAPI, ratingsAPI, type OutputDevice, type PodcastChapter, UserSession } from '../services/api'
 import { audioService } from '../services/audioService'
 import { castService } from '../services/castService'
 import { getTrackArtworkUrl } from '../utils/mediaUrl'
@@ -782,7 +782,9 @@ export const Player: React.FC = () => {
     let active = true;
     const loadRadioMetadata = async () => {
       try {
-        const metadata = await pluginsAPI.getRadioMetadata(currentTrack.stream_url || '');
+		const metadata = currentTrack.radio_station_id
+			? await radioAPI.getMetadata(currentTrack.radio_station_id)
+			: await pluginsAPI.getRadioMetadata(currentTrack.stream_url || '');
         if (active) {
           setRadioStreamTitle(metadata?.stream_title || '');
         }

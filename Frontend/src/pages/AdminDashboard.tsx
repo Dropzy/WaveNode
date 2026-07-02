@@ -95,6 +95,14 @@ interface DirectoryBrowserData {
     name: string
     path: string
   }>
+  audio_files?: Array<{
+    name: string
+    path: string
+    format: string
+    size: number
+  }>
+  audio_file_count?: number
+  audio_files_truncated?: boolean
   roots: string[]
 }
 
@@ -517,6 +525,30 @@ const DirectoryButton = styled.button`
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+`
+
+const AudioFileRow = styled.div`
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border-radius: 8px;
+  color: #c9c9c9;
+
+  span {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+`
+
+const AudioFileMeta = styled.small`
+  color: #777;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  text-transform: uppercase;
 `
 
 const PickerFooter = styled.div`
@@ -1270,7 +1302,9 @@ const AdminDashboard: React.FC = () => {
   )
 
   const completedScans = useMemo(
-    () => scans.filter(scan => scan.status !== 'running' && scan.status !== 'pending' && scan.status !== 'stopping'),
+    () => scans
+      .filter(scan => scan.status !== 'running' && scan.status !== 'pending' && scan.status !== 'stopping')
+      .slice(0, 10),
     [scans],
   )
 
@@ -2980,16 +3014,29 @@ const AdminDashboard: React.FC = () => {
             <DirectoryList>
               {directoryPickerLoading ? (
                 <EmptyState><Spin size={30} $active /> Opening folder...</EmptyState>
-              ) : directoryPicker.directories.length ? (
-                directoryPicker.directories.map(directory => (
-                  <DirectoryButton key={directory.path} onClick={() => void browseDirectories(directory.path)}>
-                    <FolderOpen size={19} color={theme.colors.accent} />
-                    <span>{directory.name}</span>
-                    <ChevronRight size={18} color="#777" />
-                  </DirectoryButton>
-                ))
               ) : (
-                <EmptyState>This folder has no subfolders.</EmptyState>
+                <>
+                  {directoryPicker.directories.map(directory => (
+                    <DirectoryButton key={directory.path} onClick={() => void browseDirectories(directory.path)}>
+                      <FolderOpen size={19} color={theme.colors.accent} />
+                      <span>{directory.name}</span>
+                      <ChevronRight size={18} color="#777" />
+                    </DirectoryButton>
+                  ))}
+                  {(directoryPicker.audio_files || []).map(file => (
+                    <AudioFileRow key={file.path} title={file.path}>
+                      <Music size={18} color={theme.colors.accent} />
+                      <span>{file.name}</span>
+                      <AudioFileMeta>{file.format} · {formatBytes(file.size)}</AudioFileMeta>
+                    </AudioFileRow>
+                  ))}
+                  {directoryPicker.directories.length === 0 && (directoryPicker.audio_files || []).length === 0 && (
+                    <EmptyState>This folder has no subfolders or supported audio tracks.</EmptyState>
+                  )}
+                  {directoryPicker.audio_files_truncated && (
+                    <SecondaryText>Showing the first {(directoryPicker.audio_files || []).length} of {directoryPicker.audio_file_count} audio tracks.</SecondaryText>
+                  )}
+                </>
               )}
             </DirectoryList>
 

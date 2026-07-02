@@ -26,6 +26,23 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Optional internet deployment with automatic HTTPS certificates through Caddy.
 - First-run setup access codes for preventing remote administrator-account claims.
 
+## 0.1.8 - 2026-07-02
+
+### Added
+
+- Native internet radio discovery, search, genre browsing, secure playback, live metadata, and per-user favourites on web and Android.
+- Favourite radio stations on the Home screen and in Subsonic internet-radio clients.
+- Audio-file previews in the administration and setup folder pickers.
+
+### Changed
+
+- Library job history now displays only the ten most recent completed scans.
+- Application backups now include per-user radio favourites.
+
+### Security
+
+- Radio metadata requests enforce HTTPS streams, public network destinations, and safe redirects.
+
 ## 0.1.7 - 2026-07-02
 
 ### Fixed

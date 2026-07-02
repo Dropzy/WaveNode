@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -60,6 +61,8 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Home
@@ -159,6 +162,8 @@ import org.wavenode.player.data.PodcastPreferences
 import org.wavenode.player.data.PodcastSubscription
 import org.wavenode.player.data.PluginHomeRow
 import org.wavenode.player.data.PluginRowItem
+import org.wavenode.player.data.RadioHomeResponse
+import org.wavenode.player.data.RadioStation
 import org.wavenode.player.data.SavedSession
 import org.wavenode.player.data.Track
 import org.wavenode.player.data.UserSession
@@ -213,6 +218,10 @@ fun WaveNodeApp(
     onPodcastQueryChange: (String) -> Unit,
     onOpenPodcast: (Podcast) -> Unit,
     onResumePodcast: (PodcastProgress) -> Unit,
+	onRadioQueryChange: (String) -> Unit,
+	onRadioGenreChange: (String) -> Unit,
+	onToggleRadioFavorite: (RadioStation) -> Unit,
+	onPlayRadio: (RadioStation, List<RadioStation>) -> Unit,
 	onAudiobookQueryChange: (String) -> Unit,
 	onOpenAudiobook: (Audiobook) -> Unit,
 	onResumeAudiobook: (AudiobookProgress) -> Unit,
@@ -269,6 +278,10 @@ fun WaveNodeApp(
             onPodcastQueryChange = onPodcastQueryChange,
             onOpenPodcast = onOpenPodcast,
             onResumePodcast = onResumePodcast,
+			onRadioQueryChange = onRadioQueryChange,
+			onRadioGenreChange = onRadioGenreChange,
+			onToggleRadioFavorite = onToggleRadioFavorite,
+			onPlayRadio = onPlayRadio,
 			onAudiobookQueryChange = onAudiobookQueryChange,
 			onOpenAudiobook = onOpenAudiobook,
 			onResumeAudiobook = onResumeAudiobook,
@@ -481,6 +494,10 @@ private fun MainShell(
     onPodcastQueryChange: (String) -> Unit,
     onOpenPodcast: (Podcast) -> Unit,
     onResumePodcast: (PodcastProgress) -> Unit,
+	onRadioQueryChange: (String) -> Unit,
+	onRadioGenreChange: (String) -> Unit,
+	onToggleRadioFavorite: (RadioStation) -> Unit,
+	onPlayRadio: (RadioStation, List<RadioStation>) -> Unit,
 	onAudiobookQueryChange: (String) -> Unit,
 	onOpenAudiobook: (Audiobook) -> Unit,
 	onResumeAudiobook: (AudiobookProgress) -> Unit,
@@ -737,7 +754,8 @@ private fun MainShell(
                     state = state,
                     recentTracks = state.tracks.take(8),
                     featuredAlbums = state.albums.take(10),
-                    pluginRows = state.pluginRows,
+                    radioFavorites = state.radioHome.favourites,
+                    onPlayRadio = onPlayRadio,
                     onPlayFromHere = onPlayFromHere,
                     onOpenAlbum = onOpenAlbum,
                     playlists = state.playlists,
@@ -774,7 +792,16 @@ private fun MainShell(
                     albums = state.albums,
                     artists = state.artists,
                     playlists = state.playlists,
-                    pluginRows = state.pluginRows,
+                    radioHome = state.radioHome,
+                    radioQuery = state.radioQuery,
+                    radioGenre = state.radioGenre,
+                    radioStations = state.radioStations,
+                    isLoadingRadio = state.isLoadingRadio,
+                    radioError = state.radioError,
+                    onRadioQueryChange = onRadioQueryChange,
+                    onRadioGenreChange = onRadioGenreChange,
+                    onToggleRadioFavorite = onToggleRadioFavorite,
+                    onPlayRadio = onPlayRadio,
                     podcastQuery = state.podcastQuery,
                     podcasts = state.podcasts,
                     isLoadingPodcasts = state.isLoadingPodcasts,
@@ -1009,7 +1036,8 @@ private fun HomeScreen(
     state: AppState,
     recentTracks: List<Track>,
     featuredAlbums: List<Album>,
-    pluginRows: List<PluginHomeRow>,
+    radioFavorites: List<RadioStation>,
+    onPlayRadio: (RadioStation, List<RadioStation>) -> Unit,
     onPlayFromHere: (Track, List<Track>) -> Unit,
     onOpenAlbum: (Album) -> Unit,
     playlists: List<Playlist>,
@@ -1041,18 +1069,17 @@ private fun HomeScreen(
             }
         }
 
-        pluginRows.forEach { row ->
+        if (radioFavorites.isNotEmpty()) {
             item {
-                SectionHeader(row.title.ifBlank { "Radio" }, row.subtitle.takeIf { it.isNotBlank() })
+                SectionHeader("Favourite radio")
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.padding(start = 16.dp),
                 ) {
-                    items(row.items, key = { "${row.pluginId}:${it.id}" }) { item ->
-                        val rowTracks = row.items.map { pluginItemToTrack(row.pluginId, it) }
-                        RadioCard(
-                            item = item,
-                            onClick = { onPlayFromHere(pluginItemToTrack(row.pluginId, item), rowTracks) },
+                    items(radioFavorites, key = { it.id }) { station ->
+                        RadioStationCard(
+                            station = station,
+                            onClick = { onPlayRadio(station, radioFavorites) },
                         )
                     }
                 }
@@ -1175,7 +1202,16 @@ private fun LibraryScreen(
     albums: List<Album>,
     artists: List<Artist>,
     playlists: List<Playlist>,
-    pluginRows: List<PluginHomeRow>,
+    radioHome: RadioHomeResponse,
+    radioQuery: String,
+    radioGenre: String,
+    radioStations: List<RadioStation>,
+    isLoadingRadio: Boolean,
+    radioError: String?,
+    onRadioQueryChange: (String) -> Unit,
+    onRadioGenreChange: (String) -> Unit,
+    onToggleRadioFavorite: (RadioStation) -> Unit,
+    onPlayRadio: (RadioStation, List<RadioStation>) -> Unit,
     podcastQuery: String,
     podcasts: List<Podcast>,
     isLoadingPodcasts: Boolean,
@@ -1219,14 +1255,6 @@ private fun LibraryScreen(
     val visibleTracks = remember(tracks, selectedSort) {
         if (selectedSort == LibrarySortOption.Name) tracks.sortedFor(TrackSortOption.Title) else tracks.sortedFor(TrackSortOption.RecentlyUploaded)
     }
-    val visibleRadioRows = remember(pluginRows, selectedSort) {
-        if (selectedSort == LibrarySortOption.Name) {
-            pluginRows.map { row -> row.copy(items = row.items.sortedByText { it.title }) }
-        } else {
-            pluginRows
-        }
-    }
-
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
             Column(
@@ -1255,15 +1283,30 @@ private fun LibraryScreen(
                         )
                     }
                 }
-                if (selectedFilter == LibraryFilter.Podcasts || selectedFilter == LibraryFilter.Audiobooks) {
+                if (selectedFilter == LibraryFilter.Podcasts || selectedFilter == LibraryFilter.Audiobooks || selectedFilter == LibraryFilter.Radio) {
                     OutlinedTextField(
-                        value = if (selectedFilter == LibraryFilter.Podcasts) podcastQuery else audiobookQuery,
-                        onValueChange = if (selectedFilter == LibraryFilter.Podcasts) onPodcastQueryChange else onAudiobookQueryChange,
+                        value = when (selectedFilter) {
+                            LibraryFilter.Podcasts -> podcastQuery
+                            LibraryFilter.Audiobooks -> audiobookQuery
+                            else -> radioQuery
+                        },
+                        onValueChange = when (selectedFilter) {
+                            LibraryFilter.Podcasts -> onPodcastQueryChange
+                            LibraryFilter.Audiobooks -> onAudiobookQueryChange
+                            else -> onRadioQueryChange
+                        },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        placeholder = { Text(if (selectedFilter == LibraryFilter.Podcasts) "Search podcasts" else "Search public-domain audiobooks") },
+                        placeholder = { Text(when (selectedFilter) {
+                            LibraryFilter.Podcasts -> "Search podcasts"
+                            LibraryFilter.Audiobooks -> "Search public-domain audiobooks"
+                            else -> "Search radio stations"
+                        }) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    if (selectedFilter == LibraryFilter.Radio) {
+                        RadioGenreRow(radioGenre, onRadioGenreChange)
+                    }
                 } else {
                     LibrarySortRow(
                         selectedSort = selectedSort,
@@ -1407,14 +1450,16 @@ private fun LibraryScreen(
 				}
 			}
             LibraryFilter.Radio -> {
-                if (visibleRadioRows.all { it.items.isEmpty() }) item { EmptyLibraryMessage("No enabled radio plugins found.") }
-                visibleRadioRows.forEach { row ->
-                    item { SectionHeader(row.title.ifBlank { "Stations" }, row.subtitle.takeIf { it.isNotBlank() }) }
-                    items(row.items, key = { "${row.pluginId}:${it.id}" }) { item ->
-                        val rowTracks = row.items.map { pluginItemToTrack(row.pluginId, it) }
-                        RadioLibraryRow(item) { onPlayFromHere(pluginItemToTrack(row.pluginId, item), rowTracks) }
-                    }
-                }
+                RadioLibraryContent(
+                    query = radioQuery,
+                    genre = radioGenre,
+                    home = radioHome,
+                    searchResults = radioStations,
+                    isLoading = isLoadingRadio,
+                    error = radioError,
+                    onPlay = onPlayRadio,
+                    onToggleFavorite = onToggleRadioFavorite,
+                )
             }
         }
     }
@@ -1478,6 +1523,81 @@ private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
             color = if (selected) WaveBackground else WaveText,
             fontWeight = FontWeight.SemiBold,
         )
+    }
+}
+
+@Composable
+private fun RadioGenreRow(selectedGenre: String, onGenreSelected: (String) -> Unit) {
+    val genres = listOf("", "Pop", "Rock", "Electronic", "Dance", "Jazz", "Classical", "News", "Talk", "Ambient")
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(genres, key = { it.ifBlank { "all" } }) { genre ->
+            FilterChip(
+                label = genre.ifBlank { "All" },
+                selected = selectedGenre.equals(genre, ignoreCase = true),
+                onClick = { onGenreSelected(genre) },
+            )
+        }
+    }
+}
+
+private fun LazyListScope.RadioLibraryContent(
+    query: String,
+    genre: String,
+    home: RadioHomeResponse,
+    searchResults: List<RadioStation>,
+    isLoading: Boolean,
+    error: String?,
+    onPlay: (RadioStation, List<RadioStation>) -> Unit,
+    onToggleFavorite: (RadioStation) -> Unit,
+) {
+    val searching = query.isNotBlank() || genre.isNotBlank()
+    if (isLoading && (searching || home.popular.isEmpty())) {
+        item {
+            Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        }
+    }
+    if (error != null) {
+        item {
+            Text(
+                text = error,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            )
+        }
+    }
+    if (searching) {
+        item { SectionHeader("Search results", searchResults.size.toString()) }
+        if (!isLoading && searchResults.isEmpty()) item { EmptyLibraryMessage("No radio stations found.") }
+        items(searchResults, key = { "search:${it.id}" }) { station ->
+            RadioStationRow(station, onClick = { onPlay(station, searchResults) }, onToggleFavorite = { onToggleFavorite(station) })
+        }
+        return
+    }
+
+    fun addStationRow(title: String, stations: List<RadioStation>) {
+        if (stations.isEmpty()) return
+        item { SectionHeader(title) }
+        item {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(start = 16.dp)) {
+                items(stations, key = { "$title:${it.id}" }) { station ->
+                    RadioStationCard(station = station, onClick = { onPlay(station, stations) })
+                }
+            }
+        }
+    }
+
+    addStationRow("Favourite stations", home.favourites)
+    addStationRow("Popular near you", home.local)
+    addStationRow("Trending now", home.trending)
+    if (home.popular.isNotEmpty()) {
+        item { SectionHeader("Popular worldwide") }
+        items(home.popular, key = { "popular:${it.id}" }) { station ->
+            RadioStationRow(station, onClick = { onPlay(station, home.popular) }, onToggleFavorite = { onToggleFavorite(station) })
+        }
+    } else if (!isLoading && error == null) {
+        item { EmptyLibraryMessage("No radio stations are available right now.") }
     }
 }
 
@@ -1753,7 +1873,7 @@ private fun AudiobookContinueCard(progress: AudiobookProgress, playerState: Play
 }
 
 @Composable
-private fun RadioLibraryRow(item: PluginRowItem, onClick: () -> Unit) {
+private fun RadioStationRow(station: RadioStation, onClick: () -> Unit, onToggleFavorite: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1762,12 +1882,21 @@ private fun RadioLibraryRow(item: PluginRowItem, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Artwork(url = item.imageUrl.takeIf { it.isNotBlank() }, size = 74, rounded = 2)
+        Artwork(url = station.faviconUrl.takeIf { it.isNotBlank() }, size = 74, rounded = 8)
         Column(modifier = Modifier.weight(1f)) {
-            Text(item.title, color = WaveText, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(item.subtitle.ifBlank { "Live radio" }, color = WaveSubtle, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(station.name, color = WaveText, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(station.country.ifBlank { station.language.ifBlank { "Live radio" } }, color = WaveSubtle, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val technical = listOfNotNull(station.codec.takeIf { it.isNotBlank() }, station.bitrate.takeIf { it > 0 }?.let { "$it kbps" }).joinToString(" · ")
+            if (technical.isNotBlank()) Text(technical, color = WaveSubtle, fontSize = 11.sp, maxLines = 1)
         }
-        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = WaveSubtle)
+        IconButton(onClick = onToggleFavorite) {
+            Icon(
+                imageVector = if (station.favourite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                contentDescription = if (station.favourite) "Remove from favourites" else "Add to favourites",
+                tint = if (station.favourite) MaterialTheme.colorScheme.error else WaveSubtle,
+            )
+        }
+        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = WaveAccent)
     }
 }
 
@@ -4516,7 +4645,7 @@ private fun AlbumCard(album: Album, artworkUrl: String?, onClick: () -> Unit) {
 }
 
 @Composable
-private fun RadioCard(item: PluginRowItem, onClick: () -> Unit) {
+private fun RadioStationCard(station: RadioStation, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .size(width = 146.dp, height = 184.dp)
@@ -4525,16 +4654,16 @@ private fun RadioCard(item: PluginRowItem, onClick: () -> Unit) {
             .padding(end = 6.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Artwork(url = item.imageUrl.takeIf { it.isNotBlank() }, size = 132)
+        Artwork(url = station.faviconUrl.takeIf { it.isNotBlank() }, size = 132)
         Text(
-            text = item.title,
+            text = station.name,
             color = WaveText,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            text = item.subtitle.ifBlank { "Live radio" },
+            text = station.country.ifBlank { station.language.ifBlank { "Live radio" } },
             color = WaveSubtle,
             fontSize = 12.sp,
             maxLines = 1,

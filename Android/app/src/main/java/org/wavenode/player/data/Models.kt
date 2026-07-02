@@ -60,6 +60,8 @@ data class Track(
     val isExternal: Boolean = false,
     @SerialName("external_kind")
     val externalKind: String = "",
+    @SerialName("radio_station_id")
+    val radioStationId: String = "",
     @SerialName("podcast_id")
     val podcastId: String = "",
     @SerialName("podcast_title")
@@ -200,6 +202,39 @@ data class RadioMetadataResponse(
     @SerialName("stream_title")
     val streamTitle: String = "",
     val error: String = "",
+)
+
+@Serializable
+data class RadioStation(
+    val id: String,
+    val name: String = "",
+    @SerialName("stream_url")
+    val streamUrl: String = "",
+    @SerialName("homepage_url")
+    val homepageUrl: String = "",
+    @SerialName("favicon_url")
+    val faviconUrl: String = "",
+    val tags: String = "",
+    val country: String = "",
+    @SerialName("country_code")
+    val countryCode: String = "",
+    val language: String = "",
+    val codec: String = "",
+    val bitrate: Int = 0,
+    val votes: Int = 0,
+    @SerialName("click_count")
+    val clickCount: Int = 0,
+    val favourite: Boolean = false,
+)
+
+@Serializable
+data class RadioHomeResponse(
+    val favourites: List<RadioStation> = emptyList(),
+    val popular: List<RadioStation> = emptyList(),
+    val trending: List<RadioStation> = emptyList(),
+    val local: List<RadioStation> = emptyList(),
+    @SerialName("directory_error")
+    val directoryError: String = "",
 )
 
 @Serializable

@@ -381,7 +381,10 @@ func (r *Router) findPluginRadioItem(streamURL string) (PluginRowItem, bool, err
 }
 
 func fetchICYStreamTitle(streamURL string) (string, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
+	return fetchICYStreamTitleWithClient(streamURL, &http.Client{Timeout: 10 * time.Second})
+}
+
+func fetchICYStreamTitleWithClient(streamURL string, client *http.Client) (string, error) {
 	request, err := http.NewRequest(http.MethodGet, streamURL, nil)
 	if err != nil {
 		return "", err
@@ -399,7 +402,7 @@ func fetchICYStreamTitle(streamURL string) (string, error) {
 	}
 
 	metaInterval, err := strconv.Atoi(response.Header.Get("icy-metaint"))
-	if err != nil || metaInterval <= 0 {
+	if err != nil || metaInterval <= 0 || metaInterval > 1<<20 {
 		return "", fmt.Errorf("station does not expose ICY metadata")
 	}
 
@@ -486,7 +489,7 @@ func (r *Router) pluginTrackActions() ([]runtimeTrackAction, error) {
 	return actions, nil
 }
 
-func (r *Router) subsonicInternetRadioStations() (map[string]interface{}, *subsonicError) {
+func (r *Router) subsonicInternetRadioStations(user *database.User) (map[string]interface{}, *subsonicError) {
 	rows, err := r.pluginHomeRows()
 	if err != nil {
 		return nil, internalSubsonicError(err)
@@ -505,6 +508,19 @@ func (r *Router) subsonicInternetRadioStations() (map[string]interface{}, *subso
 			}
 			stations = append(stations, station)
 		}
+	}
+	favourites, favoriteErr := r.db.GetRadioFavorites(user.ID)
+	if favoriteErr != nil {
+		return nil, internalSubsonicError(favoriteErr)
+	}
+	for _, station := range favourites {
+		item := map[string]interface{}{
+			"id": "radio:" + station.ID, "name": station.Name, "streamUrl": station.StreamURL,
+		}
+		if station.HomepageURL != "" {
+			item["homepageUrl"] = station.HomepageURL
+		}
+		stations = append(stations, item)
 	}
 	return map[string]interface{}{
 		"internetRadioStations": map[string]interface{}{"internetRadioStation": stations},

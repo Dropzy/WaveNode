@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const BackupFormatVersion = 5
+const BackupFormatVersion = 6
 
 var backupTables = []string{
 	"users",
@@ -23,6 +23,7 @@ var backupTables = []string{
 	"playback_profiles",
 	"user_sessions",
 	"listening_history",
+	"radio_favorites",
 }
 
 type BackupSnapshot struct {
@@ -60,6 +61,8 @@ func (db *DB) RestoreBackupSnapshot(snapshot *BackupSnapshot) error {
 		requiredTableCount = 9
 	} else if snapshot.FormatVersion == 4 {
 		requiredTableCount = 10
+	} else if snapshot.FormatVersion == 5 {
+		requiredTableCount = len(backupTables) - 1
 	}
 	requiredTables := backupTables[:requiredTableCount]
 	for _, table := range requiredTables {
@@ -75,7 +78,7 @@ func (db *DB) RestoreBackupSnapshot(snapshot *BackupSnapshot) error {
 	defer tx.Rollback()
 
 	if _, err := tx.Exec(`
-		TRUNCATE TABLE listening_history, user_sessions, playback_profiles,
+		TRUNCATE TABLE radio_favorites, listening_history, user_sessions, playback_profiles,
 			track_audio_properties, liked_tracks, recently_played, playlists,
 			music, artists, music_sources, app_settings, scan_status, plugins, users CASCADE
 	`); err != nil {

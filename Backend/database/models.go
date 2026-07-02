@@ -116,6 +116,25 @@ type MusicSource struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// RadioStation is an internet radio station snapshot saved for a user.
+type RadioStation struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	StreamURL   string    `json:"stream_url"`
+	HomepageURL string    `json:"homepage_url,omitempty"`
+	FaviconURL  string    `json:"favicon_url,omitempty"`
+	Tags        string    `json:"tags,omitempty"`
+	Country     string    `json:"country,omitempty"`
+	CountryCode string    `json:"country_code,omitempty"`
+	Language    string    `json:"language,omitempty"`
+	Codec       string    `json:"codec,omitempty"`
+	Bitrate     int       `json:"bitrate,omitempty"`
+	Votes       int       `json:"votes,omitempty"`
+	ClickCount  int       `json:"click_count,omitempty"`
+	Favourite   bool      `json:"favourite"`
+	CreatedAt   time.Time `json:"created_at,omitempty"`
+}
+
 // Plugin stores an administrator-installed declarative extension manifest.
 type Plugin struct {
 	ID        string          `json:"id"`

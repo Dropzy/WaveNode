@@ -80,6 +80,7 @@ export interface Music {
   stream_url?: string
   is_external?: boolean
   external_kind?: 'radio' | 'podcast' | 'audiobook'
+	radio_station_id?: string
   podcast_id?: string
   podcast_title?: string
   podcast_publisher?: string
@@ -156,6 +157,31 @@ export interface PluginRadioMetadata {
   station_title: string
   stream_title: string
   error?: string
+}
+
+export interface RadioStation {
+	id: string
+	name: string
+	stream_url: string
+	homepage_url?: string
+	favicon_url?: string
+	tags?: string
+	country?: string
+	country_code?: string
+	language?: string
+	codec?: string
+	bitrate?: number
+	votes?: number
+	click_count?: number
+	favourite: boolean
+}
+
+export interface RadioHomeResponse {
+	favourites: RadioStation[]
+	popular: RadioStation[]
+	trending: RadioStation[]
+	local: RadioStation[]
+	directory_error?: string
 }
 
 export interface PluginTrackAction {
@@ -600,6 +626,9 @@ export interface DirectoryBrowserData {
   current_path: string
   parent_path: string
   directories: Array<{ name: string; path: string }>
+  audio_files?: Array<{ name: string; path: string; format: string; size: number }>
+  audio_file_count?: number
+  audio_files_truncated?: boolean
   roots: string[]
 }
 
@@ -661,6 +690,36 @@ export const pluginsAPI = {
     const response = await api.get<APIResponse<PluginTrackAction[]>>('/plugins/track-actions')
     return response.data.data || []
   },
+}
+
+export const radioAPI = {
+	getHome: async (country?: string): Promise<RadioHomeResponse> => {
+		const response = await api.get<APIResponse<RadioHomeResponse>>('/radio/home', { params: country ? { country } : undefined })
+		return response.data.data || { favourites: [], popular: [], trending: [], local: [] }
+	},
+	search: async (params: { q?: string; tag?: string; countrycode?: string; offset?: number; limit?: number; order?: string }): Promise<RadioStation[]> => {
+		const response = await api.get<APIResponse<RadioStation[]>>('/radio/stations', { params })
+		return response.data.data || []
+	},
+	getFavorites: async (): Promise<RadioStation[]> => {
+		const response = await api.get<APIResponse<RadioStation[]>>('/radio/favorites')
+		return response.data.data || []
+	},
+	addFavorite: async (stationId: string): Promise<RadioStation> => {
+		const response = await api.post<APIResponse<RadioStation>>(`/radio/favorites/${encodeURIComponent(stationId)}`)
+		if (!response.data.data) throw new Error(response.data.error || 'Radio station could not be favourited')
+		return response.data.data
+	},
+	removeFavorite: async (stationId: string): Promise<void> => {
+		await api.delete(`/radio/favorites/${encodeURIComponent(stationId)}`)
+	},
+	getMetadata: async (stationId: string): Promise<PluginRadioMetadata | null> => {
+		const response = await api.get<APIResponse<PluginRadioMetadata>>(`/radio/stations/${encodeURIComponent(stationId)}/metadata`)
+		return response.data.data || null
+	},
+	registerClick: async (stationId: string): Promise<void> => {
+		await api.post(`/radio/stations/${encodeURIComponent(stationId)}/click`)
+	},
 }
 
 export const discoveryAPI = {

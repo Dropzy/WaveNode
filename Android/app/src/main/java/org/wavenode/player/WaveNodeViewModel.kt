@@ -30,6 +30,8 @@ import org.wavenode.player.data.PodcastPreferences
 import org.wavenode.player.data.PodcastProgress
 import org.wavenode.player.data.PodcastSubscription
 import org.wavenode.player.data.PluginHomeRow
+import org.wavenode.player.data.RadioHomeResponse
+import org.wavenode.player.data.RadioStation
 import org.wavenode.player.data.SavedSession
 import org.wavenode.player.data.ServerDiscovery
 import org.wavenode.player.data.SessionStore
@@ -49,6 +51,12 @@ data class AppState(
     val artists: List<Artist> = emptyList(),
     val playlists: List<Playlist> = emptyList(),
     val pluginRows: List<PluginHomeRow> = emptyList(),
+    val radioHome: RadioHomeResponse = RadioHomeResponse(),
+    val radioQuery: String = "",
+    val radioGenre: String = "",
+    val radioStations: List<RadioStation> = emptyList(),
+    val isLoadingRadio: Boolean = false,
+    val radioError: String? = null,
     val podcastQuery: String = "",
     val podcasts: List<Podcast> = emptyList(),
     val isLoadingPodcasts: Boolean = false,
@@ -108,6 +116,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
     private var lastRecordedTrackId: String? = null
     private var appVisible = false
     private var podcastSearchJob: Job? = null
+	private var radioSearchJob: Job? = null
 	private var audiobookSearchJob: Job? = null
     private var lastPodcastSnapshot: PlayerState? = null
     private var lastPodcastReportKey = ""
@@ -118,6 +127,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
         if (_state.value.session != null) {
             refreshTracks()
             refreshPodcastHome()
+			refreshRadioHome()
 			refreshAudiobookHome()
 			refreshPodcastPreferences()
         } else {
@@ -180,6 +190,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                     _state.value = AppState(session = session, isLoading = true)
                     refreshTracks()
                     refreshPodcastHome()
+					refreshRadioHome()
 					refreshAudiobookHome()
                 }
                 .onFailure { error ->
@@ -216,6 +227,120 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                 }
         }
     }
+
+    fun refreshRadioHome() {
+        val session = _state.value.session ?: return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isLoadingRadio = true, radioError = null)
+            runCatching { api.getRadioHome(session) }
+                .onSuccess { home ->
+                    _state.value = _state.value.copy(
+                        radioHome = home,
+                        isLoadingRadio = false,
+                        radioError = home.directoryError.takeIf { it.isNotBlank() },
+                    )
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(
+                        isLoadingRadio = false,
+                        radioError = error.message ?: "Could not load radio stations",
+                    )
+                }
+        }
+    }
+
+    fun updateRadioSearch(query: String) {
+        _state.value = _state.value.copy(radioQuery = query)
+        scheduleRadioSearch()
+    }
+
+    fun selectRadioGenre(genre: String) {
+        _state.value = _state.value.copy(radioGenre = genre)
+        scheduleRadioSearch()
+    }
+
+    private fun scheduleRadioSearch() {
+        radioSearchJob?.cancel()
+        val session = _state.value.session ?: return
+        val query = _state.value.radioQuery.trim()
+        val genre = _state.value.radioGenre.trim()
+        if (query.isBlank() && genre.isBlank()) {
+            _state.value = _state.value.copy(radioStations = emptyList(), isLoadingRadio = false, radioError = null)
+            return
+        }
+        radioSearchJob = viewModelScope.launch {
+            delay(350)
+            _state.value = _state.value.copy(isLoadingRadio = true, radioError = null)
+            runCatching { api.searchRadioStations(session, query, genre) }
+                .onSuccess { stations ->
+                    _state.value = _state.value.copy(radioStations = stations, isLoadingRadio = false)
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(
+                        radioStations = emptyList(),
+                        isLoadingRadio = false,
+                        radioError = error.message ?: "Could not search radio stations",
+                    )
+                }
+        }
+    }
+
+    fun toggleRadioFavorite(station: RadioStation) {
+        val session = _state.value.session ?: return
+        viewModelScope.launch {
+            runCatching {
+                if (station.favourite) {
+                    api.deleteRadioFavorite(session, station.id)
+                    station.copy(favourite = false)
+                } else {
+                    api.saveRadioFavorite(session, station.id)
+                }
+            }
+                .onSuccess { saved -> updateRadioStation(saved) }
+                .onFailure { error -> _state.value = _state.value.copy(radioError = error.message ?: "Could not update radio favourite") }
+        }
+    }
+
+    private fun updateRadioStation(station: RadioStation) {
+        val current = _state.value
+        val replace: (List<RadioStation>) -> List<RadioStation> = { stations ->
+            stations.map { if (it.id == station.id) station else it }
+        }
+        val favourites = if (station.favourite) {
+            listOf(station) + current.radioHome.favourites.filterNot { it.id == station.id }
+        } else {
+            current.radioHome.favourites.filterNot { it.id == station.id }
+        }
+        _state.value = current.copy(
+            radioHome = current.radioHome.copy(
+                favourites = favourites,
+                popular = replace(current.radioHome.popular),
+                trending = replace(current.radioHome.trending),
+                local = replace(current.radioHome.local),
+            ),
+            radioStations = replace(current.radioStations),
+            radioError = null,
+        )
+    }
+
+    fun playRadio(station: RadioStation, stations: List<RadioStation>) {
+        val session = _state.value.session ?: return
+        viewModelScope.launch { runCatching { api.registerRadioClick(session, station.id) } }
+        playFromHere(station.toTrack(), stations.map { it.toTrack() })
+    }
+
+    private fun RadioStation.toTrack() = Track(
+        id = "radio:$id",
+        title = name,
+        artist = country.ifBlank { language.ifBlank { "Live radio" } },
+        album = "Internet radio",
+        genre = tags.substringBefore(',').ifBlank { "Radio" },
+        imageUrl = faviconUrl,
+        streamUrl = streamUrl,
+        isExternal = true,
+        externalKind = "radio",
+        radioStationId = id,
+    )
 
     fun play(track: Track) {
         playFromHere(track, listOf(track))
@@ -870,7 +995,13 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
             return
         }
         viewModelScope.launch {
-            runCatching { api.getRadioMetadata(session, track.streamUrl) }
+            runCatching {
+                if (track.radioStationId.isNotBlank()) {
+                    api.getNativeRadioMetadata(session, track.radioStationId)
+                } else {
+                    api.getRadioMetadata(session, track.streamUrl)
+                }
+            }
                 .onSuccess { metadata ->
                     val streamTitle = metadata.streamTitle.trim()
                     if (streamTitle.isBlank()) {

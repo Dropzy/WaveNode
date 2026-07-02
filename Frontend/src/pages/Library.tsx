@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import styled from 'styled-components'
 import { useNavigate } from 'react-router-dom'
-import { Play, Pause, Disc, Plus, ListMusic, Edit, Trash2, User, Music2, MoreVertical, Download, PlusCircle, Heart, X, Search, ArrowUpDown, Check, CheckCircle2, List, Rows3, Sparkles, Upload, Podcast, ExternalLink, ArrowLeft, ChevronRight, Share2, ListPlus, BookOpen, type LucideIcon } from 'lucide-react'
+import { Play, Pause, Disc, Plus, ListMusic, Edit, Trash2, User, Music2, MoreVertical, Download, PlusCircle, Heart, X, Search, ArrowUpDown, Check, CheckCircle2, List, Rows3, Sparkles, Upload, Podcast, ExternalLink, ArrowLeft, ChevronRight, Share2, ListPlus, BookOpen, Radio, type LucideIcon } from 'lucide-react'
 import { albumAPI, musicAPI, playlistAPI, artistAPI, likedTracksAPI, pluginsAPI, podcastsAPI, type Music as APIMusic, type PluginTrackAction, type PodcastEpisode, type PodcastHomeResponse, type PodcastProgress, type PodcastSearchResult } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useAudio } from '../contexts/AudioContext'
@@ -11,6 +11,7 @@ import { AddToPlaylistDialog } from '../components/TrackActionsMenu'
 import { useTrackSelection } from '../hooks/useTrackSelection'
 import { downloadPodcastEpisode, getPodcastDownloadUrl, hasPodcastDownload } from '../utils/podcastDownloads'
 import { AudiobooksPanel } from '../components/AudiobooksPanel'
+import RadioPanel from '../components/RadioPanel'
 
 // Define types
 interface Track {
@@ -78,11 +79,11 @@ type TrackSort =
   | 'duration-asc'
 
 type TrackView = 'compact' | 'list'
-type LibraryTab = 'playlists' | 'albums' | 'artists' | 'tracks' | 'downloads' | 'podcasts' | 'audiobooks'
+type LibraryTab = 'playlists' | 'albums' | 'artists' | 'tracks' | 'downloads' | 'podcasts' | 'audiobooks' | 'radio'
 
 const libraryTabStorageKey = 'wavenode.library.activeTab'
 const libraryDataStorageKey = 'wavenode.library.cache'
-const libraryTabs: LibraryTab[] = ['playlists', 'albums', 'artists', 'tracks', 'downloads', 'podcasts', 'audiobooks']
+const libraryTabs: LibraryTab[] = ['playlists', 'albums', 'artists', 'tracks', 'downloads', 'podcasts', 'audiobooks', 'radio']
 
 type CachedLibraryData = {
   music: Music[]
@@ -1885,6 +1886,8 @@ export const Library: React.FC = () => {
         return 'Search podcasts...'
       case 'audiobooks':
         return 'Search public-domain audiobooks...'
+      case 'radio':
+        return 'Search radio stations...'
       default:
         return 'Search in your library...'
     }
@@ -3287,6 +3290,7 @@ export const Library: React.FC = () => {
     { id: 'downloads', label: 'Download', icon: Download },
     { id: 'podcasts', label: 'Podcasts', icon: Podcast },
     { id: 'audiobooks', label: 'Audiobooks', icon: BookOpen },
+    { id: 'radio', label: 'Radio', icon: Radio },
   ]
 
   if (loading) {
@@ -3341,6 +3345,7 @@ export const Library: React.FC = () => {
         {activeTab === 'downloads' && renderDownloads()}
         {activeTab === 'podcasts' && renderPodcasts()}
         {activeTab === 'audiobooks' && <AudiobooksPanel query={searchQuery} />}
+        {activeTab === 'radio' && <RadioPanel query={searchQuery} />}
       </TabsContainer>
 
       {/* Context Menu */}

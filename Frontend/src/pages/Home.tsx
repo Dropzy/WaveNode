@@ -3,9 +3,10 @@ import styled from 'styled-components'
 import { Play, Music as MusicIcon, Clock, Radio } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useAudio } from '../contexts/AudioContext'
-import { discoveryAPI, pluginsAPI, recentlyPlayedAPI, type DiscoveryPreview, type Music, type PluginHomeRow, type PluginRowItem } from '../services/api'
+import { discoveryAPI, radioAPI, recentlyPlayedAPI, type DiscoveryPreview, type Music, type RadioStation } from '../services/api'
 import { getArtworkGradient, getTrackArtworkUrl } from '../utils/mediaUrl'
 import { TrackActionsMenu } from '../components/TrackActionsMenu'
+import { radioStationToTrack } from '../components/RadioPanel'
 
 const HomeContainer = styled.div`
   padding: 24px;
@@ -379,31 +380,13 @@ const MissingList = styled.ul`
   padding-left: 18px;
 `
 
-const pluginItemToTrack = (pluginID: string, item: PluginRowItem): Music => ({
-  id: `plugin:${pluginID}:${item.id}`,
-  title: item.title,
-  artist: item.subtitle || 'Internet radio',
-  album: 'Live radio',
-  genre: 'Radio',
-  duration: 0,
-  release_date: '',
-  file_path: '',
-  image_url: item.image_url,
-  created_at: '',
-  updated_at: '',
-  stream_url: item.stream_url,
-  is_external: true,
-  external_kind: 'radio',
-})
-
 export const Home: React.FC = () => {
   const { isAuthenticated } = useAuth()
   const { playFromQueue } = useAudio()
   const [recentlyPlayed, setRecentlyPlayed] = useState<Music[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [pluginRows, setPluginRows] = useState<PluginHomeRow[]>([])
-  const [pluginError, setPluginError] = useState<string | null>(null)
+  const [radioFavorites, setRadioFavorites] = useState<RadioStation[]>([])
   const [discoveryPreview, setDiscoveryPreview] = useState<DiscoveryPreview | null>(null)
   const [discoveryLoading, setDiscoveryLoading] = useState(false)
   const [discoveryMessage, setDiscoveryMessage] = useState<string | null>(null)
@@ -453,26 +436,18 @@ export const Home: React.FC = () => {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      setPluginRows([])
+      setRadioFavorites([])
       return
     }
-
     let active = true
-    void pluginsAPI.getHomeRows()
-      .then(rows => {
-        if (active) {
-          setPluginRows(rows)
-          setPluginError(null)
-        }
-      })
-      .catch(err => {
-        console.error('Failed to load plugin home rows:', err)
-        if (active) {
-          setPluginError('Plugin content could not be loaded')
-        }
-      })
+    const loadFavorites = () => void radioAPI.getFavorites()
+      .then(stations => { if (active) setRadioFavorites(stations) })
+      .catch(err => console.error('Failed to load favourite radio stations:', err))
+    loadFavorites()
+    window.addEventListener('wavenode:radio-favorites-changed', loadFavorites)
     return () => {
       active = false
+      window.removeEventListener('wavenode:radio-favorites-changed', loadFavorites)
     }
   }, [isAuthenticated])
 
@@ -547,6 +522,7 @@ export const Home: React.FC = () => {
   }
 
   const visibleRecentlyPlayed = recentlyPlayed.slice(0, trackLimit)
+  const favoriteRadioTracks = radioFavorites.map(radioStationToTrack)
 
   return (
     <HomeContainer>
@@ -602,47 +578,29 @@ export const Home: React.FC = () => {
         </TrackGrid>
       </Section>
 
-      {(pluginRows.length > 0 || pluginError) && (
+      {radioFavorites.length > 0 && (
         <PluginRows>
-          {pluginError && (
-            <Section>
-              <SectionTitle><Radio size={24} /> Plugins</SectionTitle>
-              <EmptyState>
-                <EmptyStateText>{pluginError}</EmptyStateText>
-              </EmptyState>
-            </Section>
-          )}
-          {pluginRows.map(row => (
-            <Section key={`${row.plugin_id}:${row.id}`}>
-              <SectionTitle><Radio size={24} /> {row.title}</SectionTitle>
-              {row.subtitle && <EmptyStateSubtext style={{ margin: '-16px 0 18px' }}>{row.subtitle}</EmptyStateSubtext>}
-              <RadioGrid>
-                {row.items.map(item => {
-                  const rowTracks = row.items.map(rowItem => pluginItemToTrack(row.plugin_id, rowItem))
-                  const track = pluginItemToTrack(row.plugin_id, item)
-                  return (
-                  <RadioCard
-                    key={item.id}
-                    type="button"
-                    title={item.description || `Play ${item.title}`}
-                    onClick={() => void handlePlayTrack(track, rowTracks)}
-                  >
-                    <RadioArtwork
-                      $imageUrl={item.image_url}
-                      $fallback={getArtworkGradient(`${row.plugin_id}:${item.id}`)}
-                    >
-                      {item.image_url ? null : <Radio size={26} />}
-                    </RadioArtwork>
-                    <RadioDetails>
-                      <strong>{item.title}</strong>
-                      <span>{item.subtitle || 'Live radio'}</span>
-                    </RadioDetails>
-                  </RadioCard>
-                  )
-                })}
-              </RadioGrid>
-            </Section>
-          ))}
+          <Section>
+            <SectionTitle><Radio size={24} /> Favourite radio</SectionTitle>
+            <RadioGrid>
+              {radioFavorites.map((station, index) => (
+                <RadioCard
+                  key={station.id}
+                  type="button"
+                  title={`Play ${station.name}`}
+                  onClick={() => {
+                    void radioAPI.registerClick(station.id).catch(() => undefined)
+                    playFromQueue(favoriteRadioTracks, index)
+                  }}
+                >
+                  <RadioArtwork $imageUrl={station.favicon_url} $fallback={getArtworkGradient(station.id)}>
+                    {station.favicon_url ? null : <Radio size={26} />}
+                  </RadioArtwork>
+                  <RadioDetails><strong>{station.name}</strong><span>{station.country || station.language || 'Live radio'}</span></RadioDetails>
+                </RadioCard>
+              ))}
+            </RadioGrid>
+          </Section>
         </PluginRows>
       )}
 

@@ -77,6 +77,55 @@ class WaveNodeApi(
         getList(session, "/api/plugins/home-rows", "Could not load plugin rows")
     }
 
+    suspend fun getRadioHome(session: SavedSession): RadioHomeResponse = withContext(Dispatchers.IO) {
+        val country = Locale.getDefault().country.uppercase().takeIf { it.length == 2 }.orEmpty()
+        val suffix = country.takeIf { it.isNotBlank() }?.let { "?country=${queryValue(it)}" }.orEmpty()
+        getObject(session, "/api/radio/home$suffix", "Could not load radio stations")
+    }
+
+    suspend fun searchRadioStations(
+        session: SavedSession,
+        query: String = "",
+        tag: String = "",
+    ): List<RadioStation> = withContext(Dispatchers.IO) {
+        val parameters = buildList {
+            if (query.isNotBlank()) add("q=${queryValue(query)}")
+            if (tag.isNotBlank()) add("tag=${queryValue(tag)}")
+            add("limit=80")
+            add("order=clickcount")
+        }.joinToString("&")
+        getList(session, "/api/radio/stations?$parameters", "Could not search radio stations")
+    }
+
+    suspend fun saveRadioFavorite(session: SavedSession, stationId: String): RadioStation = withContext(Dispatchers.IO) {
+        val request = authorizedRequest(session, "/api/radio/favorites/${pathSegment(stationId)}")
+            .post(ByteArray(0).toRequestBody(null))
+            .build()
+        client.newCall(request).execute().use { response ->
+            val payload = json.decodeFromString<ApiResponse<RadioStation>>(response.body?.string().orEmpty())
+            if (!response.isSuccessful || !payload.success || payload.data == null) {
+                throw IllegalStateException(payload.error ?: "Could not favourite radio station")
+            }
+            payload.data
+        }
+    }
+
+    suspend fun deleteRadioFavorite(session: SavedSession, stationId: String) = withContext(Dispatchers.IO) {
+        val request = authorizedRequest(session, "/api/radio/favorites/${pathSegment(stationId)}").delete().build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IllegalStateException(apiErrorMessage(response.body?.string().orEmpty(), "Could not remove radio favourite"))
+            }
+        }
+    }
+
+    suspend fun registerRadioClick(session: SavedSession, stationId: String) = withContext(Dispatchers.IO) {
+        val request = authorizedRequest(session, "/api/radio/stations/${pathSegment(stationId)}/click")
+            .post(ByteArray(0).toRequestBody(null))
+            .build()
+        client.newCall(request).execute().close()
+    }
+
     suspend fun searchPodcasts(session: SavedSession, query: String): PodcastSearchResponse = withContext(Dispatchers.IO) {
         getObject(
             session,
@@ -291,6 +340,10 @@ class WaveNodeApi(
 
     suspend fun getRadioMetadata(session: SavedSession, streamUrl: String): RadioMetadataResponse = withContext(Dispatchers.IO) {
         getObject(session, "/api/plugins/radio-metadata?stream_url=${queryValue(streamUrl)}", "Could not load radio metadata")
+    }
+
+    suspend fun getNativeRadioMetadata(session: SavedSession, stationId: String): RadioMetadataResponse = withContext(Dispatchers.IO) {
+        getObject(session, "/api/radio/stations/${pathSegment(stationId)}/metadata", "Could not load radio metadata")
     }
 
     suspend fun getSessions(session: SavedSession): UserSessionsResponse = withContext(Dispatchers.IO) {

@@ -230,6 +230,13 @@ func (r *Router) SetupRoutes() *mux.Router {
 	protected.HandleFunc("/plugins/home-rows", r.getPluginHomeRows).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/plugins/radio-metadata", r.getPluginRadioMetadata).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/plugins/track-actions", r.getPluginTrackActions).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/radio/home", r.getRadioHome).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/radio/stations", r.searchRadioStations).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/radio/favorites", r.listRadioFavorites).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/radio/favorites/{id}", r.saveRadioFavorite).Methods("POST", "OPTIONS")
+	protected.HandleFunc("/radio/favorites/{id}", r.deleteRadioFavorite).Methods("DELETE", "OPTIONS")
+	protected.HandleFunc("/radio/stations/{id}/metadata", r.getRadioMetadata).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/radio/stations/{id}/click", r.clickRadioStation).Methods("POST", "OPTIONS")
 	protected.HandleFunc("/podcasts/search", r.searchPodcasts).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/podcasts/home", r.getPodcastHome).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/podcasts/progress", r.updatePodcastProgress).Methods("PUT", "OPTIONS")
@@ -670,6 +677,54 @@ type browsableDirectory struct {
 	Path string `json:"path"`
 }
 
+type browsableAudioFile struct {
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Format string `json:"format"`
+	Size   int64  `json:"size"`
+}
+
+const maxBrowsableAudioFiles = 500
+
+func listBrowsableDirectory(target string) ([]browsableDirectory, []browsableAudioFile, int, error) {
+	entries, err := os.ReadDir(target)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	directories := make([]browsableDirectory, 0)
+	audioFiles := make([]browsableAudioFile, 0)
+	audioFileCount := 0
+	for _, entry := range entries {
+		childPath := filepath.Join(target, entry.Name())
+		if entry.IsDir() {
+			if childInfo, statErr := os.Stat(childPath); statErr == nil && childInfo.IsDir() {
+				directories = append(directories, browsableDirectory{Name: entry.Name(), Path: childPath})
+			}
+			continue
+		}
+		if !scanner.IsSupportedMusicFile(entry.Name()) {
+			continue
+		}
+
+		audioFileCount++
+		if len(audioFiles) >= maxBrowsableAudioFiles {
+			continue
+		}
+		var size int64
+		if fileInfo, infoErr := entry.Info(); infoErr == nil {
+			size = fileInfo.Size()
+		}
+		audioFiles = append(audioFiles, browsableAudioFile{
+			Name:   entry.Name(),
+			Path:   childPath,
+			Format: strings.TrimPrefix(strings.ToLower(filepath.Ext(entry.Name())), "."),
+			Size:   size,
+		})
+	}
+	return directories, audioFiles, audioFileCount, nil
+}
+
 func (r *Router) browseMusicDirectories(w http.ResponseWriter, req *http.Request) {
 	roots := serverFilesystemRoots()
 	target := strings.TrimSpace(req.URL.Query().Get("path"))
@@ -694,25 +749,10 @@ func (r *Router) browseMusicDirectories(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	entries, err := os.ReadDir(target)
+	directories, audioFiles, audioFileCount, err := listBrowsableDirectory(target)
 	if err != nil {
 		writeJSONError(w, http.StatusForbidden, "Directory cannot be opened")
 		return
-	}
-
-	directories := make([]browsableDirectory, 0)
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		childPath := filepath.Join(target, entry.Name())
-		if childInfo, statErr := os.Stat(childPath); statErr == nil && childInfo.IsDir() {
-			directories = append(directories, browsableDirectory{
-				Name: entry.Name(),
-				Path: childPath,
-			})
-		}
 	}
 
 	parent := filepath.Dir(target)
@@ -723,10 +763,13 @@ func (r *Router) browseMusicDirectories(w http.ResponseWriter, req *http.Request
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"data": map[string]interface{}{
-			"current_path": target,
-			"parent_path":  parent,
-			"directories":  directories,
-			"roots":        roots,
+			"current_path":          target,
+			"parent_path":           parent,
+			"directories":           directories,
+			"audio_files":           audioFiles,
+			"audio_file_count":      audioFileCount,
+			"audio_files_truncated": audioFileCount > len(audioFiles),
+			"roots":                 roots,
 		},
 	})
 }

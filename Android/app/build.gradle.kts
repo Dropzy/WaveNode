@@ -15,8 +15,8 @@ android {
         applicationId = "org.wavenode.player"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.1.7"
+        versionCode = 6
+        versionName = "0.1.8"
     }
 
     buildTypes {

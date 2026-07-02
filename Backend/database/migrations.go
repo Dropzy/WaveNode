@@ -282,6 +282,32 @@ func (db *DB) runMigrations() error {
 		return fmt.Errorf("failed to migrate podcast features: %v", err)
 	}
 
+	radioFavoritesMigration := `
+		CREATE TABLE IF NOT EXISTS radio_favorites (
+			user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			station_id VARCHAR(64) NOT NULL,
+			name TEXT NOT NULL,
+			stream_url TEXT NOT NULL,
+			homepage_url TEXT NOT NULL DEFAULT '',
+			favicon_url TEXT NOT NULL DEFAULT '',
+			tags TEXT NOT NULL DEFAULT '',
+			country TEXT NOT NULL DEFAULT '',
+			country_code VARCHAR(8) NOT NULL DEFAULT '',
+			language TEXT NOT NULL DEFAULT '',
+			codec VARCHAR(32) NOT NULL DEFAULT '',
+			bitrate INTEGER NOT NULL DEFAULT 0 CHECK (bitrate >= 0),
+			votes INTEGER NOT NULL DEFAULT 0 CHECK (votes >= 0),
+			click_count INTEGER NOT NULL DEFAULT 0 CHECK (click_count >= 0),
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (user_id, station_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_radio_favorites_user_created
+			ON radio_favorites(user_id, created_at DESC);
+	`
+	if _, err := db.conn.Exec(radioFavoritesMigration); err != nil {
+		return fmt.Errorf("failed to migrate radio favourites: %v", err)
+	}
+
 	pluginMigration := `
 		CREATE TABLE IF NOT EXISTS plugins (
 			id VARCHAR(100) PRIMARY KEY,

@@ -31,6 +31,22 @@ type Scanner struct {
 
 var errScanStopped = errors.New("scan stopped")
 
+var supportedMusicExtensions = map[string]bool{
+	".mp3":  true,
+	".flac": true,
+	".wav":  true,
+	".m4a":  true,
+	".aac":  true,
+	".ogg":  true,
+	".wma":  true,
+	".opus": true,
+}
+
+// IsSupportedMusicFile reports whether a path has an extension imported by the library scanner.
+func IsSupportedMusicFile(path string) bool {
+	return supportedMusicExtensions[strings.ToLower(filepath.Ext(path))]
+}
+
 // NewScanner creates a new scanner instance
 func NewScanner(db *database.DB, musicPath string) *Scanner {
 	scanner := &Scanner{
@@ -320,17 +336,7 @@ func (s *Scanner) discoverMusicFiles(ctx context.Context, scanID string) ([]stri
 
 // isMusicFile checks if the file extension indicates a music file
 func (s *Scanner) isMusicFile(ext string) bool {
-	musicExtensions := map[string]bool{
-		".mp3":  true,
-		".flac": true,
-		".wav":  true,
-		".m4a":  true,
-		".aac":  true,
-		".ogg":  true,
-		".wma":  true,
-		".opus": true,
-	}
-	return musicExtensions[ext]
+	return supportedMusicExtensions[strings.ToLower(ext)]
 }
 
 // processBatch processes a batch of music files

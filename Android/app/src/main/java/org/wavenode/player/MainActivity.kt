@@ -56,7 +56,10 @@ class MainActivity : AppCompatActivity() {
                     playerState = playerState,
                     onLogin = viewModel::login,
                     onDiscoverServers = viewModel::discoverServers,
-                    onRefresh = viewModel::refreshTracks,
+                    onRefresh = {
+                        viewModel.refreshTracks()
+                        viewModel.refreshRadioHome()
+                    },
                     onLogout = viewModel::logout,
                     onPlayFromHere = viewModel::playFromHere,
                     onPlayQueueTrack = viewModel::playQueueTrack,
@@ -66,6 +69,10 @@ class MainActivity : AppCompatActivity() {
                     onPodcastQueryChange = viewModel::updatePodcastSearch,
                     onOpenPodcast = viewModel::openPodcast,
                     onResumePodcast = viewModel::resumePodcast,
+					onRadioQueryChange = viewModel::updateRadioSearch,
+					onRadioGenreChange = viewModel::selectRadioGenre,
+					onToggleRadioFavorite = viewModel::toggleRadioFavorite,
+					onPlayRadio = viewModel::playRadio,
 					onAudiobookQueryChange = viewModel::updateAudiobookSearch,
 					onOpenAudiobook = viewModel::openAudiobook,
 					onResumeAudiobook = viewModel::resumeAudiobook,

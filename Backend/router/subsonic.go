@@ -157,7 +157,7 @@ func (r *Router) subsonicAPI(w http.ResponseWriter, req *http.Request) {
 	case "getNewestPodcasts":
 		data = map[string]interface{}{"newestPodcasts": map[string]interface{}{"episode": []interface{}{}}}
 	case "getInternetRadioStations":
-		data, err = r.subsonicInternetRadioStations()
+		data, err = r.subsonicInternetRadioStations(user)
 	case "getChatMessages":
 		data = map[string]interface{}{"chatMessages": map[string]interface{}{"chatMessage": []interface{}{}}}
 	case "getAvatar":
