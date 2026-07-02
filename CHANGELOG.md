@@ -26,6 +26,14 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Optional internet deployment with automatic HTTPS certificates through Caddy.
 - First-run setup access codes for preventing remote administrator-account claims.
 
+## 0.1.7 - 2026-07-02
+
+### Fixed
+
+- Installed-version reporting now uses the running backend version instead of the independently versioned updater sidecar.
+- Administration dashboard version labels no longer display duplicate `v` prefixes.
+- System version details refresh after an in-app update completes.
+
 ## 0.1.6 - 2026-07-02
 
 ### Added

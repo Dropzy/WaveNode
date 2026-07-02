@@ -106,9 +106,9 @@ func (m *UpdateManager) RefreshStatus(ctx context.Context) UpdateStatus {
 	m.status.StartedAt = remote.StartedAt
 	m.status.FinishedAt = remote.FinishedAt
 	m.status.LogTail = remote.LogTail
-	if remote.CurrentVersion != "" {
-		m.status.CurrentVersion = remote.CurrentVersion
-	}
+	// The backend binary is authoritative for the installed WaveNode version.
+	// The updater is a separate sidecar and may intentionally remain on an
+	// older image after it replaces the backend and frontend containers.
 	if remote.LatestVersion != "" {
 		m.status.LatestVersion = remote.LatestVersion
 	}

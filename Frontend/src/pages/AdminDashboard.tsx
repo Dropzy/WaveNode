@@ -1128,6 +1128,11 @@ const Spin = styled(RefreshCw)<{ $active?: boolean }>`
 
 const formatNumber = (value?: number) => new Intl.NumberFormat().format(value || 0)
 
+const formatVersion = (value?: string | null) => {
+  const version = value?.trim().replace(/^v+/i, '')
+  return version ? `v${version}` : '-'
+}
+
 const formatBytes = (value: number) => {
   if (!value) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -1452,7 +1457,12 @@ const AdminDashboard: React.FC = () => {
     if (updateStatus?.state !== 'running' && updateStatus?.state !== 'checking') return
     const interval = window.setInterval(async () => {
       try {
-        setUpdateStatus(await adminUpdateAPI.getStatus())
+        const status = await adminUpdateAPI.getStatus()
+        setUpdateStatus(status)
+        if (status?.state !== 'running' && status?.state !== 'checking') {
+          const response = await api.get('/admin/system/status')
+          setSystemStatus(response.data?.data || null)
+        }
       } catch {
         // The server may briefly restart while applying an update.
       }
@@ -2632,7 +2642,7 @@ const AdminDashboard: React.FC = () => {
         <LibraryStack>
           <StatsGrid>
             {[
-              { icon: Shield, value: systemStatus ? `v${systemStatus.version}` : null, label: 'WaveNode' },
+              { icon: Shield, value: systemStatus ? formatVersion(systemStatus.version) : null, label: 'WaveNode' },
               { icon: Clock3, value: systemStatus ? formatDuration(systemStatus.uptime_seconds) : null, label: 'Uptime' },
               { icon: Wifi, value: systemStatus?.active_streams, label: 'Active streams' },
               { icon: Database, value: systemStatus?.database_in_use, label: 'Database connections' },
@@ -2675,12 +2685,12 @@ const AdminDashboard: React.FC = () => {
               <SourceList>
                 <SourceRow>
                   <span>Installed version</span>
-                  <PrimaryText>{updateStatus?.current_version ? `v${updateStatus.current_version.replace(/^v/i, '')}` : systemStatus ? `v${systemStatus.version}` : '-'}</PrimaryText>
+                  <PrimaryText>{formatVersion(updateStatus?.current_version || systemStatus?.version)}</PrimaryText>
                 </SourceRow>
                 <SourceRow>
                   <span>Latest release</span>
                   <PrimaryText>
-                    {updateStatus?.latest_version || 'Not checked yet'}
+                    {updateStatus?.latest_version ? formatVersion(updateStatus.latest_version) : 'Not checked yet'}
                     {updateStatus?.release_url && (
                       <>
                         {' '}
