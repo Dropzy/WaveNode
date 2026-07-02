@@ -60,6 +60,14 @@ func (r *Router) getArtistImage(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
+	tracks, trackErr := r.db.GetArtistTracks(artist.Name)
+	if trackErr == nil {
+		tracks, trackErr = r.filterMusicForRequest(req, tracks)
+	}
+	if trackErr != nil || len(tracks) == 0 {
+		writeJSONError(w, http.StatusNotFound, "Artist not found")
+		return
+	}
 	image, err := r.db.GetPrimaryArtistImage(artist.ID)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{

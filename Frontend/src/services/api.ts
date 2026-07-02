@@ -459,6 +459,8 @@ export interface User {
   username: string
   email: string
   role: 'admin' | 'user'
+	 library_restricted: boolean
+	 music_source_ids: string[]
   created_at: string
   updated_at: string
 }

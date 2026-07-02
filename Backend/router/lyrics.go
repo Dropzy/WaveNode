@@ -61,6 +61,11 @@ func (r *Router) getLyrics(w http.ResponseWriter, req *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "Track was not found")
 		return
 	}
+	allowed, accessErr := r.requestCanAccessMusic(req, track)
+	if accessErr != nil || !allowed {
+		writeJSONError(w, http.StatusNotFound, "Track was not found")
+		return
+	}
 	result := r.resolveLyrics(req, track)
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "data": result})
 }
@@ -94,6 +99,7 @@ func (r *Router) subsonicLyrics(req *http.Request) map[string]interface{} {
 	title := strings.TrimSpace(req.FormValue("title"))
 	value := ""
 	if tracks, err := r.db.SearchMusic(strings.TrimSpace(artist + " " + title)); err == nil {
+		tracks, _ = r.filterMusicForRequest(req, tracks)
 		for index := range tracks {
 			if strings.EqualFold(strings.TrimSpace(tracks[index].Artist), artist) && strings.EqualFold(strings.TrimSpace(tracks[index].Title), title) {
 				value = r.resolveLyrics(req, &tracks[index]).PlainText
@@ -108,6 +114,10 @@ func (r *Router) subsonicStructuredLyrics(req *http.Request) map[string]interfac
 	structured := []interface{}{}
 	track, err := r.db.GetMusic(req.FormValue("id"))
 	if err == nil {
+		allowed, _ := r.requestCanAccessMusic(req, track)
+		if !allowed {
+			return map[string]interface{}{"lyricsList": map[string]interface{}{"structuredLyrics": structured}}
+		}
 		lyrics := r.resolveLyrics(req, track)
 		if lyrics.Available {
 			lines := make([]map[string]interface{}, 0)

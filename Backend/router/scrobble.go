@@ -300,6 +300,11 @@ func (r *Router) handleScrobbleEvent(w http.ResponseWriter, req *http.Request, e
 		writeJSONError(w, http.StatusNotFound, "Track not found")
 		return
 	}
+	allowed, accessErr := r.requestCanAccessMusic(req, track)
+	if accessErr != nil || !allowed {
+		writeJSONError(w, http.StatusNotFound, "Track not found")
+		return
+	}
 	payload := scrobblePayload{}
 	_ = json.NewDecoder(req.Body).Decode(&payload)
 	listenedAt := time.Now()

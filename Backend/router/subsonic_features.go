@@ -21,7 +21,12 @@ func (r *Router) subsonicSetRating(user *database.User, req *http.Request) *subs
 		return &subsonicError{Code: 10, Message: "Rating must be an integer between 0 and 5"}
 	}
 	mediaType := "song"
-	if _, err := r.db.GetMusic(id); err != nil {
+	if track, err := r.db.GetMusic(id); err == nil {
+		allowed, accessErr := r.db.UserCanAccessMusic(user.ID, track)
+		if accessErr != nil || !allowed {
+			return notFoundSubsonicError("Media")
+		}
+	} else {
 		if _, err := r.db.GetAlbumByID(id); err == nil {
 			mediaType = "album"
 		} else if _, err := r.db.GetArtistByID(id); err == nil {
@@ -47,6 +52,10 @@ func (r *Router) subsonicBookmarks(user *database.User) (map[string]interface{},
 		if err != nil {
 			continue
 		}
+		allowed, accessErr := r.db.UserCanAccessMusic(user.ID, track)
+		if accessErr != nil || !allowed {
+			continue
+		}
 		items = append(items, map[string]interface{}{
 			"position": bookmark.PositionMS, "username": user.Username,
 			"comment": bookmark.Comment, "created": bookmark.UpdatedAt.Format(time.RFC3339),
@@ -61,7 +70,12 @@ func (r *Router) subsonicCreateBookmark(user *database.User, req *http.Request) 
 	if id == "" {
 		return missingSubsonicParameter("id")
 	}
-	if _, err := r.db.GetMusic(id); err != nil {
+	track, err := r.db.GetMusic(id)
+	if err != nil {
+		return notFoundSubsonicError("Song")
+	}
+	allowed, accessErr := r.db.UserCanAccessMusic(user.ID, track)
+	if accessErr != nil || !allowed {
 		return notFoundSubsonicError("Song")
 	}
 	position, err := strconv.ParseInt(req.FormValue("position"), 10, 64)
@@ -92,7 +106,9 @@ func (r *Router) subsonicPlayQueue(user *database.User) (map[string]interface{},
 	entries := make([]interface{}, 0, len(queue.TrackIDs))
 	for _, id := range queue.TrackIDs {
 		if track, err := r.db.GetMusic(id); err == nil {
-			entries = append(entries, subsonicSongMap(*track))
+			if allowed, _ := r.db.UserCanAccessMusic(user.ID, track); allowed {
+				entries = append(entries, subsonicSongMap(*track))
+			}
 		}
 	}
 	return map[string]interface{}{"playQueue": map[string]interface{}{
@@ -110,6 +126,20 @@ func (r *Router) subsonicSavePlayQueue(user *database.User, req *http.Request) *
 		TrackIDs: append([]string(nil), req.Form["id"]...), CurrentTrackID: req.FormValue("current"),
 		PositionMS: position,
 	}
+	allowedIDs := make([]string, 0, len(queue.TrackIDs))
+	for _, id := range queue.TrackIDs {
+		track, trackErr := r.db.GetMusic(id)
+		if trackErr != nil {
+			continue
+		}
+		if allowed, _ := r.db.UserCanAccessMusic(user.ID, track); allowed {
+			allowedIDs = append(allowedIDs, id)
+		}
+	}
+	queue.TrackIDs = allowedIDs
+	if queue.CurrentTrackID != "" && !stringSliceContains(allowedIDs, queue.CurrentTrackID) {
+		queue.CurrentTrackID = ""
+	}
 	if err := r.db.SavePlayQueue(user.ID, queue); err != nil {
 		return internalSubsonicError(err)
 	}
@@ -122,6 +152,10 @@ func (r *Router) subsonicTopSongs(req *http.Request) (map[string]interface{}, *s
 		return nil, missingSubsonicParameter("artist")
 	}
 	tracks, err := r.db.GetArtistTracks(artist)
+	if err != nil {
+		return nil, internalSubsonicError(err)
+	}
+	tracks, err = r.filterMusicForRequest(req, tracks)
 	if err != nil {
 		return nil, internalSubsonicError(err)
 	}
@@ -138,7 +172,15 @@ func (r *Router) subsonicSimilarSongs(req *http.Request, method string) (map[str
 	if err != nil {
 		return nil, notFoundSubsonicError("Song")
 	}
+	allowed, accessErr := r.requestCanAccessMusic(req, source)
+	if accessErr != nil || !allowed {
+		return nil, notFoundSubsonicError("Song")
+	}
 	all, err := r.db.GetAllMusic()
+	if err != nil {
+		return nil, internalSubsonicError(err)
+	}
+	all, err = r.filterMusicForRequest(req, all)
 	if err != nil {
 		return nil, internalSubsonicError(err)
 	}
@@ -159,9 +201,16 @@ func (r *Router) subsonicSimilarSongs(req *http.Request, method string) (map[str
 	return map[string]interface{}{key: map[string]interface{}{"song": subsonicSongs(similar)}}, nil
 }
 
-func (r *Router) subsonicArtistInfo(id, method string) (map[string]interface{}, *subsonicError) {
+func (r *Router) subsonicArtistInfo(req *http.Request, id, method string) (map[string]interface{}, *subsonicError) {
 	artist, err := r.db.GetArtistByID(id)
 	if err != nil {
+		return nil, notFoundSubsonicError("Artist")
+	}
+	tracks, trackErr := r.db.GetArtistTracks(artist.Name)
+	if trackErr == nil {
+		tracks, trackErr = r.filterMusicForRequest(req, tracks)
+	}
+	if trackErr != nil || len(tracks) == 0 {
 		return nil, notFoundSubsonicError("Artist")
 	}
 	key := "artistInfo2"
@@ -175,9 +224,16 @@ func (r *Router) subsonicArtistInfo(id, method string) (map[string]interface{}, 
 	}}, nil
 }
 
-func (r *Router) subsonicAlbumInfo(id, method string) (map[string]interface{}, *subsonicError) {
+func (r *Router) subsonicAlbumInfo(req *http.Request, id, method string) (map[string]interface{}, *subsonicError) {
 	album, err := r.db.GetAlbumByID(id)
 	if err != nil {
+		return nil, notFoundSubsonicError("Album")
+	}
+	tracks, trackErr := r.db.GetAlbumTracksByID(id)
+	if trackErr == nil {
+		tracks, trackErr = r.filterMusicForRequest(req, tracks)
+	}
+	if trackErr != nil || len(tracks) == 0 {
 		return nil, notFoundSubsonicError("Album")
 	}
 	key := "albumInfo2"

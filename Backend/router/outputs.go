@@ -46,7 +46,13 @@ func (r *Router) createCastURL(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	payload.TrackID = strings.TrimSpace(payload.TrackID)
-	if _, err := r.db.GetMusic(payload.TrackID); err != nil {
+	track, err := r.db.GetMusic(payload.TrackID)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, "Track was not found")
+		return
+	}
+	allowed, accessErr := r.requestCanAccessMusic(req, track)
+	if accessErr != nil || !allowed {
 		writeJSONError(w, http.StatusNotFound, "Track was not found")
 		return
 	}

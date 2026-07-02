@@ -15,7 +15,7 @@ var ErrLastAdministrator = errors.New("the server must keep at least one adminis
 
 // GetAllUsers retrieves all users from the database
 func (db *DB) GetAllUsers() ([]User, error) {
-	query := `SELECT id, username, email, role, password, created_at, updated_at FROM users ORDER BY username`
+	query := `SELECT id, username, email, role, password, library_restricted, created_at, updated_at FROM users ORDER BY username`
 
 	rows, err := db.conn.Query(query)
 	if err != nil {
@@ -26,7 +26,7 @@ func (db *DB) GetAllUsers() ([]User, error) {
 	var users []User
 	for rows.Next() {
 		var user User
-		err := rows.Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.Password, &user.CreatedAt, &user.UpdatedAt)
+		err := rows.Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.Password, &user.LibraryRestricted, &user.CreatedAt, &user.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan user row: %v", err)
 		}
@@ -36,16 +36,25 @@ func (db *DB) GetAllUsers() ([]User, error) {
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating user rows: %v", err)
 	}
+	if err = rows.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close user rows: %v", err)
+	}
+	for index := range users {
+		users[index].MusicSourceIDs, err = db.GetUserMusicSourceIDs(users[index].ID)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return users, nil
 }
 
 // GetUserByID retrieves a user by ID
 func (db *DB) GetUserByID(id string) (*User, error) {
-	query := `SELECT id, username, email, role, password, created_at, updated_at FROM users WHERE id = $1`
+	query := `SELECT id, username, email, role, password, library_restricted, created_at, updated_at FROM users WHERE id = $1`
 
 	var user User
-	err := db.conn.QueryRow(query, id).Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.Password, &user.CreatedAt, &user.UpdatedAt)
+	err := db.conn.QueryRow(query, id).Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.Password, &user.LibraryRestricted, &user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -54,15 +63,16 @@ func (db *DB) GetUserByID(id string) (*User, error) {
 		return nil, fmt.Errorf("failed to query user: %v", err)
 	}
 
-	return &user, nil
+	user.MusicSourceIDs, err = db.GetUserMusicSourceIDs(user.ID)
+	return &user, err
 }
 
 // GetUserByUsername retrieves a user by username
 func (db *DB) GetUserByUsername(username string) (*User, error) {
-	query := `SELECT id, username, email, role, password, created_at, updated_at FROM users WHERE username = $1`
+	query := `SELECT id, username, email, role, password, library_restricted, created_at, updated_at FROM users WHERE username = $1`
 
 	var user User
-	err := db.conn.QueryRow(query, username).Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.Password, &user.CreatedAt, &user.UpdatedAt)
+	err := db.conn.QueryRow(query, username).Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.Password, &user.LibraryRestricted, &user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -71,15 +81,16 @@ func (db *DB) GetUserByUsername(username string) (*User, error) {
 		return nil, fmt.Errorf("failed to query user: %v", err)
 	}
 
-	return &user, nil
+	user.MusicSourceIDs, err = db.GetUserMusicSourceIDs(user.ID)
+	return &user, err
 }
 
 // GetUserByEmail retrieves a user by email
 func (db *DB) GetUserByEmail(email string) (*User, error) {
-	query := `SELECT id, username, email, role, password, created_at, updated_at FROM users WHERE email = $1`
+	query := `SELECT id, username, email, role, password, library_restricted, created_at, updated_at FROM users WHERE email = $1`
 
 	var user User
-	err := db.conn.QueryRow(query, email).Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.Password, &user.CreatedAt, &user.UpdatedAt)
+	err := db.conn.QueryRow(query, email).Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.Password, &user.LibraryRestricted, &user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -88,7 +99,8 @@ func (db *DB) GetUserByEmail(email string) (*User, error) {
 		return nil, fmt.Errorf("failed to query user: %v", err)
 	}
 
-	return &user, nil
+	user.MusicSourceIDs, err = db.GetUserMusicSourceIDs(user.ID)
+	return &user, err
 }
 
 // CreateUser creates a new user with a hashed password
@@ -193,6 +205,14 @@ func (db *DB) UpdateUserRole(userID, role string) error {
 
 	if rowsAffected == 0 {
 		return fmt.Errorf("user not found")
+	}
+	if role == "admin" {
+		if _, err := tx.Exec("UPDATE users SET library_restricted = FALSE WHERE id = $1", userID); err != nil {
+			return fmt.Errorf("failed to clear administrator library restriction: %v", err)
+		}
+		if _, err := tx.Exec("DELETE FROM user_music_sources WHERE user_id = $1", userID); err != nil {
+			return fmt.Errorf("failed to clear administrator music sources: %v", err)
+		}
 	}
 
 	return tx.Commit()

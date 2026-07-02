@@ -91,6 +91,47 @@ func NewRouter(
 	return router
 }
 
+func (r *Router) filterMusicForRequest(req *http.Request, tracks []database.Music) ([]database.Music, error) {
+	userID, _ := req.Context().Value("user_id").(string)
+	return r.db.FilterMusicForUser(userID, tracks)
+}
+
+func (r *Router) requestCanAccessMusic(req *http.Request, track *database.Music) (bool, error) {
+	userID, _ := req.Context().Value("user_id").(string)
+	return r.db.UserCanAccessMusic(userID, track)
+}
+
+func (r *Router) filterAlbumsForRequest(req *http.Request, albums []database.Album) ([]database.Album, error) {
+	tracks, err := r.db.GetAllMusic()
+	if err != nil {
+		return nil, err
+	}
+	tracks, err = r.filterMusicForRequest(req, tracks)
+	if err != nil {
+		return nil, err
+	}
+	allowed := make(map[string]bool)
+	for _, track := range tracks {
+		allowed[strings.ToLower(strings.TrimSpace(track.Album))+"\x00"+strings.ToLower(strings.TrimSpace(track.Artist))] = true
+	}
+	filtered := make([]database.Album, 0, len(albums))
+	for _, album := range albums {
+		if allowed[strings.ToLower(strings.TrimSpace(album.Name))+"\x00"+strings.ToLower(strings.TrimSpace(album.Artist))] {
+			filtered = append(filtered, album)
+		}
+	}
+	return filtered, nil
+}
+
+func stringSliceContains(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
+}
+
 // SetEnrichmentScanner sets enrichment scanner on enrichment handler
 func (r *Router) SetEnrichmentScanner(scanner *enrichment.EnrichmentScanner) {
 	r.enrichmentHandler.SetEnrichmentScanner(scanner)
@@ -397,6 +438,14 @@ func (r *Router) getArtistByID(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
+	tracks, trackErr := r.db.GetArtistTracks(artist.Name)
+	if trackErr == nil {
+		tracks, trackErr = r.filterMusicForRequest(req, tracks)
+	}
+	if trackErr != nil || len(tracks) == 0 {
+		writeJSONError(w, http.StatusNotFound, "Artist not found")
+		return
+	}
 
 	response := map[string]interface{}{
 		"success": true,
@@ -459,6 +508,15 @@ func (r *Router) getArtistTracksByID(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(response)
+		return
+	}
+	tracks, err = r.filterMusicForRequest(req, tracks)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to apply library permissions")
+		return
+	}
+	if len(tracks) == 0 {
+		writeJSONError(w, http.StatusNotFound, "Artist not found")
 		return
 	}
 
@@ -848,12 +906,14 @@ func (r *Router) getUsers(w http.ResponseWriter, req *http.Request) {
 	var cleanUsers []map[string]interface{}
 	for _, user := range users {
 		cleanUser := map[string]interface{}{
-			"id":         user.ID,
-			"username":   user.Username,
-			"email":      user.Email,
-			"role":       user.Role,
-			"created_at": user.CreatedAt,
-			"updated_at": user.UpdatedAt,
+			"id":                 user.ID,
+			"username":           user.Username,
+			"email":              user.Email,
+			"role":               user.Role,
+			"library_restricted": user.LibraryRestricted,
+			"music_source_ids":   user.MusicSourceIDs,
+			"created_at":         user.CreatedAt,
+			"updated_at":         user.UpdatedAt,
 		}
 		cleanUsers = append(cleanUsers, cleanUser)
 	}
@@ -937,7 +997,9 @@ func (r *Router) updateUser(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var request struct {
-		Role string `json:"role"`
+		Role              *string  `json:"role"`
+		LibraryRestricted *bool    `json:"library_restricted"`
+		MusicSourceIDs    []string `json:"music_source_ids"`
 	}
 
 	err := json.NewDecoder(req.Body).Decode(&request)
@@ -952,8 +1014,13 @@ func (r *Router) updateUser(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Validate role
-	if request.Role != "user" && request.Role != "admin" {
+	if request.Role == nil && request.LibraryRestricted == nil {
+		writeJSONError(w, http.StatusBadRequest, "No user changes were supplied")
+		return
+	}
+
+	// Validate and update role when supplied.
+	if request.Role != nil && *request.Role != "user" && *request.Role != "admin" {
 		response := map[string]interface{}{
 			"success": false,
 			"error":   "Role must be either 'user' or 'admin'",
@@ -964,8 +1031,12 @@ func (r *Router) updateUser(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Update user role
-	err = r.db.UpdateUserRole(userID, request.Role)
+	if request.Role != nil {
+		err = r.db.UpdateUserRole(userID, *request.Role)
+	}
+	if err == nil && request.LibraryRestricted != nil {
+		err = r.db.SetUserMusicAccess(userID, *request.LibraryRestricted, request.MusicSourceIDs)
+	}
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, database.ErrLastAdministrator) {
@@ -983,7 +1054,7 @@ func (r *Router) updateUser(w http.ResponseWriter, req *http.Request) {
 
 	response := map[string]interface{}{
 		"success": true,
-		"message": "User role updated successfully",
+		"message": "User updated successfully",
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1123,6 +1194,11 @@ func (r *Router) recentlyPlayed(w http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	tracks, err = r.filterMusicForRequest(req, tracks)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to apply library permissions")
+		return
+	}
 	for i := range tracks {
 		normalizeTrackArtwork(&tracks[i])
 		if tracks[i].CoverArtURL == "" &&
@@ -1174,6 +1250,16 @@ func (r *Router) addToRecentlyPlayed(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(response)
+		return
+	}
+	track, trackErr := r.db.GetMusic(trackID)
+	if trackErr != nil {
+		writeJSONError(w, http.StatusNotFound, "Track not found")
+		return
+	}
+	allowed, accessErr := r.requestCanAccessMusic(req, track)
+	if accessErr != nil || !allowed {
+		writeJSONError(w, http.StatusNotFound, "Track not found")
 		return
 	}
 
@@ -1239,6 +1325,16 @@ func (r *Router) getAlbumByID(w http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	albumTracks, accessErr := r.db.GetAlbumTracksByID(albumID)
+	if accessErr != nil {
+		writeJSONError(w, http.StatusNotFound, "Album not found")
+		return
+	}
+	albumTracks, accessErr = r.filterMusicForRequest(req, albumTracks)
+	if accessErr != nil || len(albumTracks) == 0 {
+		writeJSONError(w, http.StatusNotFound, "Album not found")
+		return
+	}
 	normalizeAlbumArtwork(album)
 
 	response := map[string]interface{}{
@@ -1292,6 +1388,15 @@ func (r *Router) getAlbumTracksByID(w http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	tracks, err = r.filterMusicForRequest(req, tracks)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to apply library permissions")
+		return
+	}
+	if len(tracks) == 0 {
+		writeJSONError(w, http.StatusNotFound, "Album not found")
+		return
+	}
 	normalizeAlbumArtwork(album)
 	for i := range tracks {
 		normalizeTrackArtwork(&tracks[i])
@@ -1324,6 +1429,25 @@ func (r *Router) getAlbums(w http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	allTracks, err := r.db.GetAllMusic()
+	if err == nil {
+		allTracks, err = r.filterMusicForRequest(req, allTracks)
+	}
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to apply library permissions")
+		return
+	}
+	allowedAlbums := make(map[string]bool)
+	for _, track := range allTracks {
+		allowedAlbums[strings.ToLower(strings.TrimSpace(track.Album))+"\x00"+strings.ToLower(strings.TrimSpace(track.Artist))] = true
+	}
+	filteredAlbums := albums[:0]
+	for _, album := range albums {
+		if allowedAlbums[strings.ToLower(strings.TrimSpace(album.Name))+"\x00"+strings.ToLower(strings.TrimSpace(album.Artist))] {
+			filteredAlbums = append(filteredAlbums, album)
+		}
+	}
+	albums = filteredAlbums
 
 	// Transform album cover art URLs to use artwork endpoint.
 	for i := range albums {
@@ -1393,6 +1517,25 @@ func (r *Router) getArtists(w http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	allTracks, err := r.db.GetAllMusic()
+	if err == nil {
+		allTracks, err = r.filterMusicForRequest(req, allTracks)
+	}
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to apply library permissions")
+		return
+	}
+	allowedArtists := make(map[string]bool)
+	for _, track := range allTracks {
+		allowedArtists[strings.ToLower(strings.TrimSpace(track.Artist))] = true
+	}
+	filteredArtists := artists[:0]
+	for _, artist := range artists {
+		if allowedArtists[strings.ToLower(strings.TrimSpace(stringValue(artist["name"])))] {
+			filteredArtists = append(filteredArtists, artist)
+		}
+	}
+	artists = filteredArtists
 
 	response := map[string]interface{}{
 		"success": true,
@@ -1540,6 +1683,11 @@ func (r *Router) getAlbumTracks(w http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	tracks, err = r.filterMusicForRequest(req, tracks)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to apply library permissions")
+		return
+	}
 
 	// If we have exact match tracks, return them
 	if len(tracks) > 0 {
@@ -1643,6 +1791,11 @@ func (r *Router) getArtistTracks(w http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	tracks, err = r.filterMusicForRequest(req, tracks)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to apply library permissions")
+		return
+	}
 
 	// Get unique albums for this artist
 	albums := make(map[string]bool)
@@ -1702,6 +1855,11 @@ func (r *Router) comprehensiveSearch(w http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	songs, err = r.filterMusicForRequest(req, songs)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to apply library permissions")
+		return
+	}
 
 	// Search for albums
 	albums, err := r.searchAlbums(query)
@@ -1728,9 +1886,30 @@ func (r *Router) comprehensiveSearch(w http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	allowedAlbums := make(map[string]bool)
+	allowedArtists := make(map[string]bool)
+	for _, song := range songs {
+		allowedAlbums[strings.ToLower(strings.TrimSpace(song.Album))+"\x00"+strings.ToLower(strings.TrimSpace(song.Artist))] = true
+		allowedArtists[strings.ToLower(strings.TrimSpace(song.Artist))] = true
+	}
+	filteredAlbums := albums[:0]
+	for _, album := range albums {
+		key := strings.ToLower(strings.TrimSpace(stringValue(album["name"]))) + "\x00" + strings.ToLower(strings.TrimSpace(stringValue(album["artist"])))
+		if allowedAlbums[key] {
+			filteredAlbums = append(filteredAlbums, album)
+		}
+	}
+	albums = filteredAlbums
+	filteredArtists := artists[:0]
+	for _, artist := range artists {
+		if allowedArtists[strings.ToLower(strings.TrimSpace(stringValue(artist["name"])))] {
+			filteredArtists = append(filteredArtists, artist)
+		}
+	}
+	artists = filteredArtists
 
 	// Search for playlists
-	playlists, err := r.searchPlaylists(query)
+	playlists, err := r.searchPlaylists(query, requestUserID(req))
 	if err != nil {
 		response := map[string]interface{}{
 			"success": false,
@@ -1823,9 +2002,9 @@ func (r *Router) searchArtists(query string) ([]map[string]interface{}, error) {
 }
 
 // searchPlaylists searches for playlists by name or description
-func (r *Router) searchPlaylists(query string) ([]database.Playlist, error) {
+func (r *Router) searchPlaylists(query, userID string) ([]database.Playlist, error) {
 	// Get all playlists and filter them
-	allPlaylists, err := r.db.GetAllPlaylists()
+	allPlaylists, err := r.db.GetUserPlaylists(userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get playlists: %v", err)
 	}
@@ -1875,6 +2054,11 @@ func (r *Router) getLikedTracks(w http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	tracks, err = r.filterMusicForRequest(req, tracks)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to apply library permissions")
+		return
+	}
 
 	response := map[string]interface{}{
 		"success": true,
@@ -1912,6 +2096,16 @@ func (r *Router) likeTrack(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(response)
+		return
+	}
+	track, trackErr := r.db.GetMusic(trackID)
+	if trackErr != nil {
+		writeJSONError(w, http.StatusNotFound, "Track not found")
+		return
+	}
+	allowed, accessErr := r.requestCanAccessMusic(req, track)
+	if accessErr != nil || !allowed {
+		writeJSONError(w, http.StatusNotFound, "Track not found")
 		return
 	}
 

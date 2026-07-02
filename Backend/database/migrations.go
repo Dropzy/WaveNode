@@ -25,6 +25,21 @@ func (db *DB) runMigrations() error {
 		return fmt.Errorf("failed to create music source settings: %v", err)
 	}
 
+	userLibraryAccessMigration := `
+		ALTER TABLE users
+			ADD COLUMN IF NOT EXISTS library_restricted BOOLEAN NOT NULL DEFAULT FALSE;
+		CREATE TABLE IF NOT EXISTS user_music_sources (
+			user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			source_id VARCHAR(255) NOT NULL REFERENCES music_sources(id) ON DELETE CASCADE,
+			PRIMARY KEY (user_id, source_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_user_music_sources_source_id
+			ON user_music_sources(source_id);
+	`
+	if _, err := db.conn.Exec(userLibraryAccessMigration); err != nil {
+		return fmt.Errorf("failed to create user library permissions: %v", err)
+	}
+
 	playlistOwnershipMigration := `
 		ALTER TABLE playlists ADD COLUMN IF NOT EXISTS user_id VARCHAR(255);
 		UPDATE playlists

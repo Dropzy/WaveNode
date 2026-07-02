@@ -969,6 +969,31 @@ const Select = styled.select`
   }
 `
 
+const AccessControl = styled.div`
+	display: grid;
+	gap: 7px;
+	min-width: 220px;
+
+	label {
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		font-size: 13px;
+	}
+`
+
+const SourceChoices = styled.div`
+	display: grid;
+	gap: 5px;
+	padding-left: 4px;
+	color: #bbb;
+
+	label {
+		font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+		font-size: 11px;
+	}
+`
+
 const AutomationRow = styled.div`
   display: grid;
   grid-template-columns: minmax(220px, 1fr) minmax(150px, 220px) auto;
@@ -1195,6 +1220,7 @@ const AdminDashboard: React.FC = () => {
   const [newPassword, setNewPassword] = useState('')
   const [newRole, setNewRole] = useState<User['role']>('user')
   const [creatingUser, setCreatingUser] = useState(false)
+	const [userAccessAction, setUserAccessAction] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [jobAction, setJobAction] = useState<JobAction>(null)
@@ -1498,12 +1524,37 @@ const AdminDashboard: React.FC = () => {
     try {
       setError(null)
       await api.put(`/admin/users/${target.id}`, { role })
-      setUsers(current => current.map(item => item.id === target.id ? { ...item, role } : item))
+			setUsers(current => current.map(item => item.id === target.id ? {
+				...item,
+				role,
+				...(role === 'admin' ? { library_restricted: false, music_source_ids: [] } : {}),
+			} : item))
       setSuccess(`${target.username}'s role was updated`)
     } catch (requestError) {
       setError(getErrorMessage(requestError, 'Could not update the user role'))
     }
   }
+
+	const updateUserAccess = async (target: User, libraryRestricted: boolean, sourceIds: string[]) => {
+		try {
+			setUserAccessAction(target.id)
+			setError(null)
+			await api.put(`/admin/users/${target.id}`, {
+				library_restricted: libraryRestricted,
+				music_source_ids: sourceIds,
+			})
+			setUsers(current => current.map(item => item.id === target.id ? {
+				...item,
+				library_restricted: libraryRestricted,
+				music_source_ids: sourceIds,
+			} : item))
+			setSuccess(`${target.username}'s library access was updated`)
+		} catch (requestError) {
+			setError(getErrorMessage(requestError, 'Could not update library access'))
+		} finally {
+			setUserAccessAction(null)
+		}
+	}
 
   const createUser = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -2175,7 +2226,7 @@ const AdminDashboard: React.FC = () => {
             <TableWrap>
               <Table>
                 <thead>
-                  <tr><th>User</th><th>Email</th><th>Role</th><th>Joined</th><th>Action</th></tr>
+					<tr><th>User</th><th>Email</th><th>Role</th><th>Music access</th><th>Joined</th><th>Action</th></tr>
                 </thead>
                 <tbody>
                   {users.map(target => {
@@ -2195,6 +2246,46 @@ const AdminDashboard: React.FC = () => {
                             <option value="admin">Administrator</option>
                           </Select>
                         </td>
+						<td>
+							{target.role === 'admin' ? (
+								<SecondaryText>All folders (administrator)</SecondaryText>
+							) : (
+								<AccessControl>
+									<label>
+										<input
+											type="checkbox"
+											checked={target.library_restricted || false}
+											disabled={userAccessAction === target.id}
+											onChange={event => void updateUserAccess(target, event.target.checked, event.target.checked ? (target.music_source_ids || []) : [])}
+										/>
+										Limit to selected folders
+									</label>
+									{target.library_restricted && (
+										<SourceChoices>
+											{musicSources.length ? musicSources.map(source => {
+												const selected = (target.music_source_ids || []).includes(source.id)
+												return (
+													<label key={source.id} title={source.path}>
+														<input
+															type="checkbox"
+															checked={selected}
+															disabled={userAccessAction === target.id}
+															onChange={() => void updateUserAccess(target, true, selected
+																? target.music_source_ids.filter(id => id !== source.id)
+																: [...(target.music_source_ids || []), source.id])}
+														/>
+														{source.path}
+													</label>
+												)
+											}) : <SecondaryText>No music sources configured</SecondaryText>}
+											{musicSources.length > 0 && (target.music_source_ids || []).length === 0 && (
+												<SecondaryText>No folders selected: music is fully blocked.</SecondaryText>
+											)}
+										</SourceChoices>
+									)}
+								</AccessControl>
+							)}
+						</td>
                         <td>{formatDate(target.created_at)}</td>
                         <td>
                           <Button

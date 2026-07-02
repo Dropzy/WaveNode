@@ -34,6 +34,16 @@ func NewMusicHandler(db *database.DB) *MusicHandler {
 	}
 }
 
+func (h *MusicHandler) filterMusicForRequest(r *http.Request, tracks []database.Music) ([]database.Music, error) {
+	userID, _ := r.Context().Value("user_id").(string)
+	return h.db.FilterMusicForUser(userID, tracks)
+}
+
+func (h *MusicHandler) requestCanAccessMusic(r *http.Request, track *database.Music) (bool, error) {
+	userID, _ := r.Context().Value("user_id").(string)
+	return h.db.UserCanAccessMusic(userID, track)
+}
+
 // GetAllMusic handles getting all music tracks
 func (h *MusicHandler) GetAllMusic(w http.ResponseWriter, r *http.Request) {
 	musicList, err := h.db.GetAllMusic()
@@ -45,6 +55,11 @@ func (h *MusicHandler) GetAllMusic(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
+		return
+	}
+	musicList, err = h.filterMusicForRequest(r, musicList)
+	if err != nil {
+		http.Error(w, "Failed to apply library permissions", http.StatusInternalServerError)
 		return
 	}
 
@@ -232,6 +247,11 @@ func (h *MusicHandler) SearchMusic(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	results, err = h.filterMusicForRequest(r, results)
+	if err != nil {
+		http.Error(w, "Failed to apply library permissions", http.StatusInternalServerError)
+		return
+	}
 
 	response := auth.APIResponse{
 		Success: true,
@@ -270,8 +290,14 @@ func (h *MusicHandler) ComprehensiveSearch(w http.ResponseWriter, r *http.Reques
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	musicList, err = h.filterMusicForRequest(r, musicList)
+	if err != nil {
+		http.Error(w, "Failed to apply library permissions", http.StatusInternalServerError)
+		return
+	}
 
-	playlists, err := h.db.GetAllPlaylists()
+	userID, _ := r.Context().Value("user_id").(string)
+	playlists, err := h.db.GetUserPlaylists(userID)
 	if err != nil {
 		response := auth.APIResponse{
 			Success: false,
@@ -395,6 +421,15 @@ func (h *MusicHandler) StreamMusic(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	allowed, accessErr := h.requestCanAccessMusic(r, music)
+	if accessErr != nil {
+		http.Error(w, "Failed to apply library permissions", http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
+		http.Error(w, "Music not found", http.StatusNotFound)
+		return
+	}
 
 	log.Printf("Found music: %s, file_path: %s", music.Title, music.FilePath)
 
@@ -475,6 +510,15 @@ func (h *MusicHandler) DownloadMusic(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(response)
+		return
+	}
+	allowed, accessErr := h.requestCanAccessMusic(r, music)
+	if accessErr != nil {
+		http.Error(w, "Failed to apply library permissions", http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
+		http.Error(w, "Music not found", http.StatusNotFound)
 		return
 	}
 
@@ -636,6 +680,15 @@ func (h *MusicHandler) GetMusic(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
+		return
+	}
+	allowed, accessErr := h.requestCanAccessMusic(r, music)
+	if accessErr != nil {
+		http.Error(w, "Failed to apply library permissions", http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
+		http.Error(w, "Music not found", http.StatusNotFound)
 		return
 	}
 

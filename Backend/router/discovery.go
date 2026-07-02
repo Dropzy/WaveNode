@@ -224,6 +224,10 @@ func (r *Router) buildDiscoveryPreview(userID, source string) (*discoveryPreview
 	if err != nil {
 		return nil, err
 	}
+	tracks, err = r.db.FilterMusicForUser(userID, tracks)
+	if err != nil {
+		return nil, err
+	}
 
 	matches, missing := matchDiscoveryRecommendations(recommendations, tracks)
 	return &discoveryPreview{

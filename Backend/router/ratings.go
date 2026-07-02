@@ -15,7 +15,18 @@ func (r *Router) getRating(w http.ResponseWriter, req *http.Request) {
 		writeJSONError(w, http.StatusUnauthorized, "Failed to get user information")
 		return
 	}
-	rating, err := r.db.GetMediaRating(userID, mux.Vars(req)["id"])
+	id := mux.Vars(req)["id"]
+	track, err := r.db.GetMusic(id)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, "Track not found")
+		return
+	}
+	allowed, accessErr := r.requestCanAccessMusic(req, track)
+	if accessErr != nil || !allowed {
+		writeJSONError(w, http.StatusNotFound, "Track not found")
+		return
+	}
+	rating, err := r.db.GetMediaRating(userID, id)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -30,7 +41,13 @@ func (r *Router) setRating(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	id := mux.Vars(req)["id"]
-	if _, err := r.db.GetMusic(id); err != nil {
+	track, err := r.db.GetMusic(id)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, "Track not found")
+		return
+	}
+	allowed, accessErr := r.requestCanAccessMusic(req, track)
+	if accessErr != nil || !allowed {
 		writeJSONError(w, http.StatusNotFound, "Track not found")
 		return
 	}

@@ -122,12 +122,21 @@ func (r *Router) createPlaybackHandoff(w http.ResponseWriter, req *http.Request)
 				tracks = append(tracks, *track)
 			}
 		}
+		tracks, err = r.db.FilterMusicForUser(userID, tracks)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Could not apply library permissions")
+			return
+		}
 		if len(tracks) == 0 {
 			writeJSONError(w, http.StatusBadRequest, "No playable library tracks were provided")
 			return
 		}
 		if payload.StartIndex >= len(tracks) {
 			payload.StartIndex = 0
+		}
+		payload.TrackIDs = make([]string, len(tracks))
+		for index, track := range tracks {
+			payload.TrackIDs[index] = track.ID
 		}
 	}
 	command := playbackHandoffCommand{
@@ -167,6 +176,11 @@ func (r *Router) getListeningHistory(w http.ResponseWriter, req *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	entries, err = r.filterListeningHistory(req, entries)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to apply library permissions")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "data": entries})
 }
 
@@ -182,6 +196,11 @@ func (r *Router) exportListeningHistory(w http.ResponseWriter, req *http.Request
 	entries, err := r.db.GetListeningHistory(requestUserID(req), req.URL.Query().Get("search"), 500, 0)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	entries, err = r.filterListeningHistory(req, entries)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to apply library permissions")
 		return
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
@@ -206,6 +225,11 @@ func (r *Router) exportPlaylistM3U(w http.ResponseWriter, req *http.Request) {
 	tracks, err := r.db.GetPlaylistTracks(playlist.ID, requestUserID(req))
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	tracks, err = r.filterMusicForRequest(req, tracks)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to apply library permissions")
 		return
 	}
 	filename := strings.NewReplacer(`"`, "", "\r", "", "\n", "").Replace(playlist.Name)
@@ -235,7 +259,7 @@ func (r *Router) importPlaylistM3U(w http.ResponseWriter, req *http.Request) {
 	if supplied := strings.TrimSpace(req.FormValue("name")); supplied != "" {
 		name = supplied
 	}
-	trackIDs, err := r.resolveM3UTrackIDs(file)
+	trackIDs, err := r.resolveM3UTrackIDs(file, requestUserID(req))
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
@@ -251,10 +275,16 @@ func (r *Router) importPlaylistM3U(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"success": true, "data": playlist})
 }
 
-func (r *Router) resolveM3UTrackIDs(reader io.Reader) ([]string, error) {
+func (r *Router) resolveM3UTrackIDs(reader io.Reader, userIDs ...string) ([]string, error) {
 	tracks, err := r.db.GetAllMusic()
 	if err != nil {
 		return nil, err
+	}
+	if len(userIDs) > 0 && userIDs[0] != "" {
+		tracks, err = r.db.FilterMusicForUser(userIDs[0], tracks)
+		if err != nil {
+			return nil, err
+		}
 	}
 	byPath := make(map[string]string)
 	byBase := make(map[string][]string)
@@ -307,6 +337,28 @@ func (r *Router) resolveM3UTrackIDs(reader io.Reader) ([]string, error) {
 		return nil, fmt.Errorf("none of the playlist entries matched this library")
 	}
 	return result, scanner.Err()
+}
+
+func (r *Router) filterListeningHistory(req *http.Request, entries []database.ListeningHistoryEntry) ([]database.ListeningHistoryEntry, error) {
+	tracks := make([]database.Music, len(entries))
+	for index := range entries {
+		tracks[index] = entries[index].Track
+	}
+	allowed, err := r.filterMusicForRequest(req, tracks)
+	if err != nil {
+		return nil, err
+	}
+	allowedIDs := make(map[string]bool, len(allowed))
+	for _, track := range allowed {
+		allowedIDs[track.ID] = true
+	}
+	filtered := make([]database.ListeningHistoryEntry, 0, len(entries))
+	for _, entry := range entries {
+		if allowedIDs[entry.Track.ID] {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered, nil
 }
 
 func normalizeM3UPath(value string) string {

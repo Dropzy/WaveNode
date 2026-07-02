@@ -26,6 +26,17 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Optional internet deployment with automatic HTTPS certificates through Caddy.
 - First-run setup access codes for preventing remote administrator-account claims.
 
+## 0.1.6 - 2026-07-02
+
+### Added
+
+- Per-user music-source permissions managed from the administration dashboard.
+- Server-side access enforcement across library browsing, search, playlists, history, streaming, downloads, casting, lyrics, discovery, and Subsonic clients.
+
+### Security
+
+- Restricted users can no longer retrieve or play tracks outside their assigned music folders through direct media endpoints or secondary playback features.
+
 ## 0.1.5 - 2026-06-30
 
 ### Added

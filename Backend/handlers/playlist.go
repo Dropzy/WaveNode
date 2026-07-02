@@ -23,6 +23,32 @@ func NewPlaylistHandler(db *database.DB) *PlaylistHandler {
 	}
 }
 
+func (h *PlaylistHandler) allowedPlaylistTrackIDs(userID string) (map[string]bool, error) {
+	tracks, err := h.db.GetAllMusic()
+	if err != nil {
+		return nil, err
+	}
+	tracks, err = h.db.FilterMusicForUser(userID, tracks)
+	if err != nil {
+		return nil, err
+	}
+	allowed := make(map[string]bool, len(tracks))
+	for _, track := range tracks {
+		allowed[track.ID] = true
+	}
+	return allowed, nil
+}
+
+func sanitizePlaylistTrackIDs(playlist *database.Playlist, allowed map[string]bool) {
+	filtered := make([]string, 0, len(playlist.TrackIDs))
+	for _, trackID := range playlist.TrackIDs {
+		if allowed[trackID] {
+			filtered = append(filtered, trackID)
+		}
+	}
+	playlist.TrackIDs = filtered
+}
+
 // GetPlaylists handles getting all playlists
 func (h *PlaylistHandler) GetPlaylists(w http.ResponseWriter, r *http.Request) {
 	userID, err := auth.GetUserFromContext(r)
@@ -40,6 +66,14 @@ func (h *PlaylistHandler) GetPlaylists(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
 		return
+	}
+	allowed, err := h.allowedPlaylistTrackIDs(userID)
+	if err != nil {
+		writePlaylistError(w, http.StatusInternalServerError, "Failed to apply library permissions")
+		return
+	}
+	for index := range playlists {
+		sanitizePlaylistTrackIDs(&playlists[index], allowed)
 	}
 
 	response := auth.APIResponse{
@@ -73,6 +107,12 @@ func (h *PlaylistHandler) GetPlaylist(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	allowed, err := h.allowedPlaylistTrackIDs(userID)
+	if err != nil {
+		writePlaylistError(w, http.StatusInternalServerError, "Failed to apply library permissions")
+		return
+	}
+	sanitizePlaylistTrackIDs(playlist, allowed)
 
 	response := auth.APIResponse{
 		Success: true,
@@ -315,6 +355,11 @@ func (h *PlaylistHandler) PreviewSmartPlaylist(w http.ResponseWriter, r *http.Re
 		writePlaylistError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	tracks, err = h.db.FilterMusicForUser(userID, tracks)
+	if err != nil {
+		writePlaylistError(w, http.StatusInternalServerError, "Failed to apply library permissions")
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(auth.APIResponse{Success: true, Message: "Smart playlist preview generated", Data: tracks})
 }
@@ -390,6 +435,16 @@ func (h *PlaylistHandler) AddToPlaylist(w http.ResponseWriter, r *http.Request) 
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	track, err := h.db.GetMusic(trackID)
+	if err != nil {
+		writePlaylistError(w, http.StatusNotFound, "Track not found")
+		return
+	}
+	allowed, err := h.db.UserCanAccessMusic(userID, track)
+	if err != nil || !allowed {
+		writePlaylistError(w, http.StatusNotFound, "Track not found")
+		return
+	}
 
 	playlist, err := h.db.AddTrackToPlaylist(playlistID, trackID, userID)
 	if err != nil {
@@ -432,6 +487,18 @@ func (h *PlaylistHandler) AddManyToPlaylist(w http.ResponseWriter, r *http.Reque
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		writePlaylistError(w, http.StatusBadRequest, "Invalid request body")
 		return
+	}
+	for _, trackID := range request.TrackIDs {
+		track, trackErr := h.db.GetMusic(trackID)
+		if trackErr != nil {
+			writePlaylistError(w, http.StatusNotFound, "One or more tracks were not found")
+			return
+		}
+		allowed, accessErr := h.db.UserCanAccessMusic(userID, track)
+		if accessErr != nil || !allowed {
+			writePlaylistError(w, http.StatusNotFound, "One or more tracks were not found")
+			return
+		}
 	}
 	playlist, err := h.db.AddTracksToPlaylist(mux.Vars(r)["id"], request.TrackIDs, userID)
 	if err != nil {
@@ -511,6 +578,11 @@ func (h *PlaylistHandler) GetPlaylistTracks(w http.ResponseWriter, r *http.Reque
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		json.NewEncoder(w).Encode(response)
+		return
+	}
+	tracks, err = h.db.FilterMusicForUser(userID, tracks)
+	if err != nil {
+		writePlaylistError(w, http.StatusInternalServerError, "Failed to apply library permissions")
 		return
 	}
 

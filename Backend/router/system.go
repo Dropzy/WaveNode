@@ -10,7 +10,7 @@ import (
 	"music-server/utils"
 )
 
-var WaveNodeVersion = "0.1.5"
+var WaveNodeVersion = "0.1.6"
 
 var serverStartedAt = time.Now()
 

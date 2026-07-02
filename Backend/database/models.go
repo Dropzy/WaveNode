@@ -164,13 +164,15 @@ type SmartPlaylistCondition struct {
 
 // User represents a user account
 type User struct {
-	ID        string    `json:"id"`
-	Username  string    `json:"username"`
-	Email     string    `json:"email"`
-	Role      string    `json:"role"` // "admin" or "user"
-	Password  string    `json:"-"`    // Don't include password in JSON responses
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID                string    `json:"id"`
+	Username          string    `json:"username"`
+	Email             string    `json:"email"`
+	Role              string    `json:"role"` // "admin" or "user"
+	Password          string    `json:"-"`    // Don't include password in JSON responses
+	LibraryRestricted bool      `json:"library_restricted"`
+	MusicSourceIDs    []string  `json:"music_source_ids"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 // LikedTrack represents a user's liked track
