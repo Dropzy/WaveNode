@@ -4648,10 +4648,9 @@ private fun AlbumCard(album: Album, artworkUrl: String?, onClick: () -> Unit) {
 private fun RadioStationCard(station: RadioStation, onClick: () -> Unit) {
     Column(
         modifier = Modifier
-            .size(width = 146.dp, height = 184.dp)
+            .size(width = 132.dp, height = 184.dp)
             .clip(RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-            .padding(end = 6.dp),
+            .clickable(onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Artwork(url = station.faviconUrl.takeIf { it.isNotBlank() }, size = 132)

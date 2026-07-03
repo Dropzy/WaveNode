@@ -326,7 +326,11 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
     fun playRadio(station: RadioStation, stations: List<RadioStation>) {
         val session = _state.value.session ?: return
         viewModelScope.launch { runCatching { api.registerRadioClick(session, station.id) } }
-        playFromHere(station.toTrack(), stations.map { it.toTrack() })
+        // Radio controls do not expose queue navigation. Keeping only the
+        // selected station also prevents one malformed directory entry from
+        // invalidating playback for every station in a discovery row.
+        val track = station.toTrack()
+        playFromHere(track, listOf(track))
     }
 
     private fun RadioStation.toTrack() = Track(
@@ -893,23 +897,26 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
 		}
         val startIndex = playableQueue.indexOfFirst { it.id == track.id }.takeIf { it >= 0 } ?: 0
         val isLongformQueue = playableQueue.any { it.externalKind in setOf("podcast", "audiobook") }
-        if (_state.value.connectedPlaybackSessionId.isNotBlank() && !isLongformQueue) {
+        if (_state.value.connectedPlaybackSessionId.isNotBlank()) {
             sendRemoteQueue(playableQueue, startIndex)
             return
-        }
-        if (isLongformQueue) {
-            _state.value = _state.value.copy(
-                connectedPlaybackSessionId = "",
-                connectedPlaybackDeviceName = "",
-                connectMessage = null,
-            )
         }
         val startPositionMs = when (track.externalKind) {
 			"podcast" -> track.takeUnless { it.podcastCompleted }?.podcastProgressSeconds?.toLong()?.times(1000L)
 			"audiobook" -> track.takeUnless { it.audiobookCompleted }?.audiobookProgressSeconds?.toLong()?.times(1000L)
 			else -> null
 		} ?: 0L
-        player.playQueue(session, playableQueue, startIndex, startPositionMs)
+		val playbackStarted = runCatching {
+			player.playQueue(session, playableQueue, startIndex, startPositionMs)
+		}.onFailure { playbackError ->
+			Log.e("WaveNode", "Could not prepare playback", playbackError)
+			_state.value = if (track.externalKind == "radio") {
+				_state.value.copy(radioError = "This radio stream could not be played.")
+			} else {
+				_state.value.copy(error = playbackError.message ?: "Playback could not be started")
+			}
+		}.isSuccess
+		if (!playbackStarted) return
 		if (isLongformQueue) {
 			val podcastId = playableQueue[startIndex].podcastId
 			val speed = _state.value.podcastHome.subscriptions.firstOrNull { it.podcastId == podcastId }?.playbackSpeed
@@ -924,17 +931,9 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
         val session = _state.value.session ?: return
         val queue = playerState.value.queue.ifEmpty { listOf(track) }
         val startIndex = queue.indexOfFirst { it.id == track.id }.takeIf { it >= 0 } ?: 0
-        val isLongformQueue = queue.any { it.externalKind in setOf("podcast", "audiobook") }
-        if (_state.value.connectedPlaybackSessionId.isNotBlank() && !isLongformQueue) {
+        if (_state.value.connectedPlaybackSessionId.isNotBlank()) {
             sendRemoteQueue(queue, startIndex)
             return
-        }
-        if (isLongformQueue) {
-            _state.value = _state.value.copy(
-                connectedPlaybackSessionId = "",
-                connectedPlaybackDeviceName = "",
-                connectMessage = null,
-            )
         }
         player.playQueue(session, queue, startIndex)
         recordPlay(track)
@@ -1223,6 +1222,12 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun handlePlaybackHandoff(session: SavedSession, command: org.wavenode.player.data.PlaybackHandoffCommand) {
+		val previousTarget = _state.value.connectedPlaybackSessionId
+		if (command.action == "play_queue" && previousTarget.isNotBlank() && previousTarget != command.sourceSessionId) {
+			viewModelScope.launch {
+				runCatching { api.createPlaybackHandoff(session, previousTarget, emptyList(), 0, action = "stop") }
+			}
+		}
         _state.value = _state.value.copy(
             connectedPlaybackSessionId = "",
             connectedPlaybackDeviceName = "",
@@ -1231,6 +1236,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
         when (command.action) {
             "toggle_play_pause" -> player.togglePlayPause()
             "seek" -> player.seekTo(command.positionMs)
+			"stop" -> player.pause()
             else -> {
                 val queue = command.tracks.ifEmpty {
                     val tracksById = _state.value.tracks.associateBy { it.id }
@@ -1238,6 +1244,12 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                 }
                 if (queue.isNotEmpty()) {
                     player.playQueue(session, queue, command.startIndex, command.positionMs)
+					val selected = queue.getOrNull(command.startIndex.coerceIn(0, queue.lastIndex))
+					if (selected != null && selected.externalKind in setOf("podcast", "audiobook")) {
+						val speed = _state.value.podcastHome.subscriptions.firstOrNull { it.podcastId == selected.podcastId }?.playbackSpeed
+							?: _state.value.podcastPreferences.defaultPlaybackSpeed
+						player.setPlaybackSpeed(speed)
+					}
                 }
             }
         }
@@ -1341,15 +1353,23 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
     fun connectPlaybackTo(sessionId: String) {
         val session = _state.value.session ?: return
         if (sessionId == _state.value.currentSessionId) {
-            if (!player.resumeLocalPlayback(session)) {
-                _state.value = _state.value.copy(connectMessage = "Choose something to play first")
-                return
-            }
-            _state.value = _state.value.copy(
-                connectedPlaybackSessionId = "",
-                connectedPlaybackDeviceName = "",
-                connectMessage = "Playback switched to this phone",
-            )
+			val previousTarget = _state.value.connectedPlaybackSessionId
+			viewModelScope.launch {
+				if (previousTarget.isNotBlank()) {
+					runCatching {
+						api.createPlaybackHandoff(session, previousTarget, emptyList(), 0, action = "stop")
+					}
+				}
+				if (!player.resumeLocalPlayback(session)) {
+					_state.value = _state.value.copy(connectMessage = "Choose something to play first")
+					return@launch
+				}
+				_state.value = _state.value.copy(
+					connectedPlaybackSessionId = "",
+					connectedPlaybackDeviceName = "",
+					connectMessage = "Playback switched to this phone",
+				)
+			}
             return
         }
         val playerState = playerState.value
@@ -1361,13 +1381,17 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _state.value = _state.value.copy(connectMessage = null)
             runCatching {
+				val previousTarget = _state.value.connectedPlaybackSessionId
                 api.createPlaybackHandoff(
                     session = session,
                     targetSessionId = sessionId,
-                    trackIds = queue.map { it.id },
+                    tracks = queue,
                     startIndex = playerState.currentIndex.coerceAtLeast(0),
-                    positionMs = playerState.positionMs,
+                    positionMs = playerState.currentTrack?.takeUnless { it.externalKind == "radio" }?.let { playerState.positionMs } ?: 0L,
                 )
+				if (previousTarget.isNotBlank() && previousTarget != sessionId) {
+					api.createPlaybackHandoff(session, previousTarget, emptyList(), 0, action = "stop")
+				}
             }
                 .onSuccess {
                     val deviceName = _state.value.connectSessions.firstOrNull { it.id == sessionId }?.deviceName ?: "device"
@@ -1395,14 +1419,18 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
             return
         }
         val safeIndex = startIndex.coerceIn(0, playableQueue.lastIndex)
-        val positionMs = if (safeIndex == playerState.value.currentIndex) playerState.value.positionMs else 0L
+        val positionMs = if (safeIndex == playerState.value.currentIndex && playableQueue[safeIndex].externalKind != "radio") {
+			playerState.value.positionMs
+		} else {
+			0L
+		}
         player.setRemoteQueue(playableQueue, safeIndex, isPlaying = true, positionMs = positionMs)
         viewModelScope.launch {
             runCatching {
                 api.createPlaybackHandoff(
                     session = session,
                     targetSessionId = targetSessionId,
-                    trackIds = playableQueue.map { it.id },
+                    tracks = playableQueue,
                     startIndex = safeIndex,
                     positionMs = positionMs,
                 )
@@ -1423,7 +1451,7 @@ class WaveNodeViewModel(application: Application) : AndroidViewModel(application
                 api.createPlaybackHandoff(
                     session = session,
                     targetSessionId = targetSessionId,
-                    trackIds = emptyList(),
+                    tracks = emptyList(),
                     startIndex = 0,
                     action = action,
                     positionMs = positionMs,

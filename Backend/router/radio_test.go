@@ -34,3 +34,35 @@ func TestValidatePublicRadioStreamRejectsLocalAddress(t *testing.T) {
 		t.Fatal("expected loopback radio stream to be rejected")
 	}
 }
+
+func TestRadioSearchParamsNormalizesGenreTag(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/radio/stations?tag=Hip+Hop", nil)
+	params := radioSearchParams(req, 50)
+	if got := params.Get("tag"); got != "hip hop" {
+		t.Fatalf("tag = %q, want %q", got, "hip hop")
+	}
+}
+
+func TestValidateExternalHandoffTrackUsesOriginalPodcastURL(t *testing.T) {
+	track, err := validateExternalHandoffTrack(playbackHandoffTrack{
+		ID: "podcast:show:episode", Title: "Episode", IsExternal: true, ExternalKind: "podcast",
+		StreamURL:       "file:///data/user/0/org.wavenode.player/files/episode.mp3",
+		PodcastAudioURL: "https://media.example.test/episode.mp3",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if track.StreamURL != "https://media.example.test/episode.mp3" || track.PodcastAudioURL != track.StreamURL {
+		t.Fatalf("unexpected podcast stream: %#v", track)
+	}
+}
+
+func TestValidateExternalHandoffTrackRejectsInsecureStream(t *testing.T) {
+	_, err := validateExternalHandoffTrack(playbackHandoffTrack{
+		ID: "radio:station", Title: "Station", IsExternal: true, ExternalKind: "radio",
+		StreamURL: "http://radio.example.test/live",
+	})
+	if err == nil {
+		t.Fatal("expected insecure external stream to be rejected")
+	}
+}

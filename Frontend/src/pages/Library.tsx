@@ -2976,6 +2976,7 @@ export const Library: React.FC = () => {
       podcast_episode_id: episode.id,
       podcast_description: episode.description,
       podcast_website_url: episode.website_url || selectedPodcast.website_url,
+	  podcast_audio_url: episode.audio_url,
 	  podcast_chapters_url: episode.chapters_url,
 	  podcast_chapters_type: episode.chapters_type,
     }))
@@ -3025,6 +3026,9 @@ export const Library: React.FC = () => {
     podcast_episode_id: progress.episode_id,
     podcast_description: progress.description,
     podcast_website_url: progress.website_url,
+	podcast_audio_url: progress.audio_url,
+	podcast_progress_seconds: progress.position_seconds,
+	podcast_completed: progress.completed,
   })
 
   const resumePodcast = async (progress: PodcastProgress) => {

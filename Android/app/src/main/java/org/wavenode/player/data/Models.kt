@@ -263,6 +263,7 @@ data class PlaybackHandoffRequest(
     val targetSessionId: String,
     @SerialName("track_ids")
     val trackIds: List<String> = emptyList(),
+    val tracks: List<Track> = emptyList(),
     @SerialName("start_index")
     val startIndex: Int = 0,
     val action: String = "play_queue",

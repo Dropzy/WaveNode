@@ -15,8 +15,8 @@ android {
         applicationId = "org.wavenode.player"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.1.8"
+        versionCode = 7
+        versionName = "0.1.9"
     }
 
     buildTypes {
@@ -59,6 +59,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

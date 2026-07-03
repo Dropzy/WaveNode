@@ -26,6 +26,24 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Optional internet deployment with automatic HTTPS certificates through Caddy.
 - First-run setup access codes for preventing remote administrator-account claims.
 
+## 0.1.9 - 2026-07-03
+
+### Added
+
+- Spotify-style Connect handoff for local music, podcasts, audiobooks, radio, and mixed playable queues across web and Android devices.
+- Explicit playback ownership changes that stop the previous playback host when control moves to another WaveNode device.
+- HLS internet-radio playback support in the Android app.
+
+### Fixed
+
+- Radio genre filters now return stations by normalising Radio Browser tags.
+- Android radio playback failures no longer force-close the app.
+- Android Home radio-card spacing now matches album cards.
+
+### Security
+
+- External handoff items are size-limited, type-restricted, sanitised, and required to use secure stream URLs.
+
 ## 0.1.8 - 2026-07-02
 
 ### Added

@@ -317,13 +317,15 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
     tracks: Music[],
     index: number,
     positionSeconds = 0,
-    action: 'play_queue' | 'toggle_play_pause' | 'seek' = 'play_queue',
+    action: 'play_queue' | 'toggle_play_pause' | 'seek' | 'stop' = 'play_queue',
   ) => {
     const safeIndex = tracks.length > 0 ? Math.max(0, Math.min(index, tracks.length - 1)) : 0;
-    const positionMs = Math.max(0, Math.round(positionSeconds * 1000));
+    const positionMs = tracks[safeIndex]?.external_kind === 'radio'
+      ? 0
+      : Math.max(0, Math.round(positionSeconds * 1000));
     await playbackConnectAPI.createHandoff(
       targetSessionId,
-      tracks.map(track => track.id),
+      tracks,
       safeIndex,
       positionMs,
       action,
@@ -779,7 +781,11 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
 
     const activeIndex = Math.max(0, Math.min(currentTrackIndexRef.current, activeQueue.length - 1));
     const positionSeconds = audioService.getCurrentTime() || currentTime || 0;
+    const previousTarget = connectedPlaybackSessionIdRef.current;
     await sendPlaybackCommand(targetSessionId, activeQueue, activeIndex, positionSeconds);
+    if (previousTarget && previousTarget !== targetSessionId) {
+      await sendPlaybackCommand(previousTarget, [], 0, 0, 'stop');
+    }
     setConnectedPlaybackSessionId(targetSessionId);
     setConnectedPlaybackDeviceName(deviceName);
     setControlledByPlaybackSessionId(null);
@@ -795,7 +801,15 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
   }, [currentTime, currentTrack, duration, sendPlaybackCommand, startRemoteProgressClock]);
 
   const returnPlaybackToThisDevice = useCallback(async () => {
-    const wasConnected = Boolean(connectedPlaybackSessionIdRef.current);
+    const previousTarget = connectedPlaybackSessionIdRef.current;
+    const wasConnected = Boolean(previousTarget);
+	if (previousTarget) {
+		try {
+			await sendPlaybackCommand(previousTarget, [], 0, 0, 'stop');
+		} catch (error) {
+			console.warn('Could not stop the previous playback device:', error);
+		}
+	}
     setConnectedPlaybackSessionId(null);
     setConnectedPlaybackDeviceName('');
     setControlledByPlaybackSessionId(null);
@@ -813,7 +827,7 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
     } catch (error) {
       console.error('Failed to return playback to this device:', error);
     }
-  }, [currentTime, currentTrack, isPlaying, stopRemoteProgressClock]);
+  }, [currentTime, currentTrack, isPlaying, sendPlaybackCommand, stopRemoteProgressClock]);
 
   useEffect(() => {
     if (authLoading || !user || !token) {
@@ -832,6 +846,10 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
         if (!command || cancelled) {
           return;
         }
+        const previousTarget = connectedPlaybackSessionIdRef.current;
+        if (command.action === 'play_queue' && previousTarget && previousTarget !== command.source_session_id) {
+          await sendPlaybackCommand(previousTarget, [], 0, 0, 'stop');
+        }
         setConnectedPlaybackSessionId(null);
         setConnectedPlaybackDeviceName('');
         connectedPlaybackSessionIdRef.current = null;
@@ -845,6 +863,12 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
         }
         if (command.action === 'seek') {
           audioService.seekTo((command.position_ms ?? 0) / 1000);
+          return;
+        }
+        if (command.action === 'stop') {
+          setControlledByPlaybackSessionId(null);
+          audioService.pause();
+          setIsPlaying(false);
           return;
         }
         if (command.track_ids.length === 0) {
@@ -877,7 +901,7 @@ export const AudioProvider: React.FC<AudioProviderProps> = ({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [authLoading, playLocalFromQueueAt, stopRemoteProgressClock, token, user]);
+  }, [authLoading, playLocalFromQueueAt, sendPlaybackCommand, stopRemoteProgressClock, token, user]);
 
   const playPlaylistShuffled = (tracks: Music[]) => {
     if (tracks.length > 0) {

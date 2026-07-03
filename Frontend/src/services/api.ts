@@ -89,6 +89,9 @@ export interface Music {
   podcast_website_url?: string
 	podcast_chapters_url?: string
 	podcast_chapters_type?: string
+	podcast_audio_url?: string
+	podcast_progress_seconds?: number
+	podcast_completed?: boolean
 	audiobook_id?: string
 	audiobook_title?: string
 	audiobook_author?: string
@@ -96,6 +99,8 @@ export interface Music {
 	audiobook_chapter_number?: number
 	audiobook_description?: string
 	audiobook_website_url?: string
+	audiobook_progress_seconds?: number
+	audiobook_completed?: boolean
 }
 
 export interface LyricLine {
@@ -467,7 +472,7 @@ export interface PlaybackHandoffCommand {
   track_ids: string[]
   tracks?: Music[]
   start_index: number
-  action?: 'play_queue' | 'toggle_play_pause' | 'seek'
+  action?: 'play_queue' | 'toggle_play_pause' | 'seek' | 'stop'
   position_ms?: number
   created_at: string
 }
@@ -1115,14 +1120,15 @@ export const accountAPI = {
 export const playbackConnectAPI = {
   createHandoff: async (
     targetSessionId: string,
-    trackIds: string[],
+    tracks: Music[],
     startIndex: number,
     positionMs = 0,
-    action: 'play_queue' | 'toggle_play_pause' | 'seek' = 'play_queue',
+    action: 'play_queue' | 'toggle_play_pause' | 'seek' | 'stop' = 'play_queue',
   ): Promise<PlaybackHandoffCommand | null> => {
     const response = await api.post<APIResponse<PlaybackHandoffCommand>>('/playback/connect', {
       target_session_id: targetSessionId,
-      track_ids: trackIds,
+      track_ids: tracks.map(track => track.id),
+      tracks,
       start_index: startIndex,
       position_ms: positionMs,
       action,

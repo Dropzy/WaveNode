@@ -353,7 +353,7 @@ class WaveNodeApi(
     suspend fun createPlaybackHandoff(
         session: SavedSession,
         targetSessionId: String,
-        trackIds: List<String>,
+        tracks: List<Track>,
         startIndex: Int,
         action: String = "play_queue",
         positionMs: Long? = null,
@@ -361,7 +361,8 @@ class WaveNodeApi(
         val body = json.encodeToString(
             PlaybackHandoffRequest(
                 targetSessionId = targetSessionId,
-                trackIds = trackIds,
+                trackIds = tracks.map { it.id },
+                tracks = tracks,
                 startIndex = startIndex,
                 action = action,
                 positionMs = positionMs,

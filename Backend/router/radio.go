@@ -128,10 +128,15 @@ func radioSearchParams(req *http.Request, limitDefault int) url.Values {
 		"limit":  {strconv.Itoa(clampIntQuery(req, "limit", limitDefault, 1, 100))},
 		"offset": {strconv.Itoa(clampIntQuery(req, "offset", 0, 0, 10000))},
 	}
-	for _, field := range []string{"name", "tag", "countrycode"} {
+	for _, field := range []string{"name", "countrycode"} {
 		if value := strings.TrimSpace(req.URL.Query().Get(field)); value != "" {
 			params.Set(field, value)
 		}
+	}
+	if tag := strings.TrimSpace(req.URL.Query().Get("tag")); tag != "" {
+		// Radio Browser stores and matches tags in lower case, while clients use
+		// display labels such as "Electronic" and "Hip Hop".
+		params.Set("tag", strings.ToLower(tag))
 	}
 	order := strings.ToLower(strings.TrimSpace(req.URL.Query().Get("order")))
 	allowedOrders := map[string]bool{"name": true, "votes": true, "clickcount": true, "clicktrend": true, "bitrate": true, "random": true}
