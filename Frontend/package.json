@@ -38,7 +38,7 @@
   },
   "dependencies": {
     "@types/crypto-js": "^4.2.2",
-    "axios": "^1.17.0",
+    "axios": "^1.18.1",
     "crypto-js": "^4.2.0",
     "lucide-react": "^1.18.0",
     "react": "^19.2.7",
